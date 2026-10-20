@@ -19,8 +19,16 @@ import { useAuthStore } from './store/useAuthStore';
 
 export function App() {
   const { cargarDatos } = useFinanceStore();
-  const { activeTab } = useAppStore();
+  const { activeTab, theme } = useAppStore();
   const { initAuth, user } = useAuthStore();
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
 
   useEffect(() => {
     initAuth();

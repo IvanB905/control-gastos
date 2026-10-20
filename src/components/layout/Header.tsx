@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Calendar, ChevronLeft, ChevronRight, Bell, Menu } from 'lucide-react';
+import { Plus, Calendar, ChevronLeft, ChevronRight, Bell, Menu, Sun, Moon } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { MESES } from '../../lib/utils';
 
@@ -11,7 +11,9 @@ export const Header: React.FC = () => {
     moneda, 
     setMoneda,
     setTransactionModalOpen,
-    toggleSidebar
+    toggleSidebar,
+    theme,
+    toggleTheme
   } = useAppStore();
 
   const handlePrevMonth = () => {
@@ -104,6 +106,19 @@ export const Header: React.FC = () => {
             <span className="hidden xs:inline">USD</span>
           </button>
         </div>
+
+        {/* Quick Theme Switcher Button */}
+        <button
+          onClick={toggleTheme}
+          className="p-1.5 sm:p-2 text-zinc-500 hover:text-zinc-900 dark:hover:text-white rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors cursor-pointer"
+          title={`Cambiar a tema ${theme === 'dark' ? 'claro' : 'oscuro'}`}
+        >
+          {theme === 'dark' ? (
+            <Sun className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Moon className="w-4 h-4 text-indigo-500" />
+          )}
+        </button>
 
         {/* Notifications Icon (visible on tablet+) */}
         <button className="hidden md:flex p-2 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors relative cursor-pointer">
