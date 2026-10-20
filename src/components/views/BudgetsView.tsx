@@ -110,7 +110,7 @@ export const BudgetsView: React.FC = () => {
           <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
             Margen Libre Disponible
           </span>
-          <span className={`text-xl font-bold block mt-1 ${margenDisponible < 0 ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400'}`}>
+          <span className={`text-xl font-bold block mt-1 ${margenDisponible < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
             {formatCurrency(margenDisponible, moneda)}
           </span>
         </div>

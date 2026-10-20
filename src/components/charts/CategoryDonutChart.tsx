@@ -101,7 +101,7 @@ export const CategoryDonutChart: React.FC = () => {
         <div className="space-y-4">
           {/* Chart Canvas with Center Total */}
           <div className="relative h-52 w-full flex items-center justify-center">
-            <Doughnut data={data} options={options} />
+            <Doughnut key={`${theme}-${moneda}`} data={data} options={options} />
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
               <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">
                 Total Gastado

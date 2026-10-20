@@ -100,7 +100,7 @@ export const IncomeExpenseBarChart: React.FC = () => {
           display: false,
         },
         ticks: {
-          color: isDark ? '#71717A' : '#A1A1AA',
+          color: isDark ? '#71717A' : '#52525B',
           font: {
             size: 11,
           },
@@ -108,10 +108,10 @@ export const IncomeExpenseBarChart: React.FC = () => {
       },
       y: {
         grid: {
-          color: isDark ? '#27272A' : '#F4F4F5',
+          color: isDark ? '#27272A' : '#E4E4E7',
         },
         ticks: {
-          color: isDark ? '#71717A' : '#A1A1AA',
+          color: isDark ? '#71717A' : '#52525B',
           font: {
             size: 10,
           },
@@ -141,7 +141,7 @@ export const IncomeExpenseBarChart: React.FC = () => {
       </div>
 
       <div className="h-64 w-full">
-        <Bar data={data} options={options} />
+        <Bar key={`${theme}-${moneda}`} data={data} options={options} />
       </div>
     </div>
   );

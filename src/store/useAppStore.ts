@@ -20,7 +20,7 @@ interface AppState {
 }
 
 const initialTheme = (localStorage.getItem('fintech_theme') as 'light' | 'dark') || 
-  (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'dark');
+  (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 
 if (initialTheme === 'dark') {
   document.documentElement.classList.add('dark');
