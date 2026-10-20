@@ -39,7 +39,7 @@ export function App() {
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <Header />
 
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 space-y-7">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 md:space-y-7">
           {activeTab === 'dashboard' && (
             <>
               {/* Top KPI Metric Cards */}

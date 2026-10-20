@@ -14,6 +14,9 @@ interface AppState {
   setTransactionModalOpen: (open: boolean) => void;
   activeTab: 'dashboard' | 'movimientos' | 'cuentas' | 'presupuestos' | 'configuracion';
   setActiveTab: (tab: 'dashboard' | 'movimientos' | 'cuentas' | 'presupuestos' | 'configuracion') => void;
+  isSidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
+  toggleSidebar: () => void;
 }
 
 const initialTheme = (localStorage.getItem('fintech_theme') as 'light' | 'dark') || 
@@ -54,4 +57,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTransactionModalOpen: (open) => set({ isTransactionModalOpen: open }),
   activeTab: 'dashboard',
   setActiveTab: (tab) => set({ activeTab: tab }),
+  isSidebarOpen: false,
+  setSidebarOpen: (open) => set({ isSidebarOpen: open }),
+  toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 }));

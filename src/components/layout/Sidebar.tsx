@@ -9,7 +9,8 @@ import {
   Moon, 
   TrendingUp,
   LogOut,
-  LogIn
+  LogIn,
+  X
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -31,41 +32,71 @@ const navItems: NavItem[] = [
 ];
 
 export const Sidebar: React.FC = () => {
-  const { theme, toggleTheme, activeTab, setActiveTab } = useAppStore();
+  const { theme, toggleTheme, activeTab, setActiveTab, isSidebarOpen, setSidebarOpen } = useAppStore();
   const { user, signOut, setAuthModalOpen } = useAuthStore();
 
   const userInitial = user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0).toUpperCase() || 'U';
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Modo Demo';
   const userEmail = user?.email || 'Sin sesión activa';
 
-  return (
-    <aside className="w-64 border-r border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-950 flex flex-col justify-between transition-colors duration-200 select-none">
-      {/* Brand Header */}
-      <div>
-        <div className="h-18 flex items-center px-6 gap-3 border-b border-zinc-100 dark:border-zinc-900">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
-            <TrendingUp className="w-5 h-5 stroke-[2.5]" />
-          </div>
-          <div>
-            <span className="font-bold text-lg tracking-tight text-zinc-900 dark:text-white flex items-center gap-1.5">
-              Finanza<span className="text-emerald-500 text-xs px-1.5 py-0.5 rounded-full bg-emerald-500/10 font-semibold border border-emerald-500/20">v2.0</span>
-            </span>
-            <p className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium">Gestión Inteligente</p>
-          </div>
-        </div>
+  const handleSelectTab = (tabId: typeof activeTab) => {
+    setActiveTab(tabId);
+    setSidebarOpen(false);
+  };
 
-        {/* Navigation Items */}
-        <nav className="p-4 space-y-1.5">
-          <div className="px-3 py-2 text-[11px] font-semibold tracking-wider text-zinc-400 dark:text-zinc-500 uppercase">
-            Menú Principal
+  return (
+    <>
+      {/* Mobile Backdrop */}
+      {isSidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden animate-in fade-in duration-200"
+        />
+      )}
+
+      {/* Sidebar Drawer */}
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 w-64 border-r border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-950 flex flex-col justify-between transition-transform duration-200 md:static md:translate-x-0 select-none shadow-xl md:shadow-none',
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        )}
+      >
+        {/* Brand Header */}
+        <div>
+          <div className="h-18 flex items-center justify-between px-6 border-b border-zinc-100 dark:border-zinc-900">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-md shadow-emerald-500/20">
+                <TrendingUp className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <span className="font-bold text-lg tracking-tight text-zinc-900 dark:text-white flex items-center gap-1.5">
+                  Finanza<span className="text-emerald-500 text-xs px-1.5 py-0.5 rounded-full bg-emerald-500/10 font-semibold border border-emerald-500/20">v2.0</span>
+                </span>
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium">Gestión Inteligente</p>
+              </div>
+            </div>
+
+            {/* Mobile Close Button */}
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-lg md:hidden cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
+
+          {/* Navigation Items */}
+          <nav className="p-4 space-y-1.5">
+            <div className="px-3 py-2 text-[11px] font-semibold tracking-wider text-zinc-400 dark:text-zinc-500 uppercase">
+              Menú Principal
+            </div>
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleSelectTab(item.id)}
                 className={cn(
                   'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 text-left cursor-pointer',
                   isActive
@@ -133,5 +164,6 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
     </aside>
+    </>
   );
 };
