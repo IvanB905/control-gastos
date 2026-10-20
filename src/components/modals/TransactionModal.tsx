@@ -16,6 +16,7 @@ export const TransactionModal: React.FC = () => {
   const [cuentaId, setCuentaId] = useState(cuentas[0]?.id || '');
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [estado, setEstado] = useState<EstadoMovimiento>('completado');
+  const [esRecurrente, setEsRecurrente] = useState(false);
 
   if (!isTransactionModalOpen) return null;
 
@@ -44,7 +45,7 @@ export const TransactionModal: React.FC = () => {
       fecha,
       descripcion: descripcion || (tipo === 'gasto' ? 'Gasto general' : 'Ingreso general'),
       estado,
-      es_recurrente: false,
+      es_recurrente: esRecurrente,
     });
 
     setMonto('');
@@ -233,6 +234,17 @@ export const TransactionModal: React.FC = () => {
               </select>
             </div>
           </div>
+
+          {/* Es recurrente */}
+          <label className="flex items-center gap-2 pt-1 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={esRecurrente}
+              onChange={(e) => setEsRecurrente(e.target.checked)}
+              className="w-4 h-4 rounded border-zinc-300 dark:border-zinc-700 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+            />
+            <span>Gasto o ingreso recurrente (fijo mensual)</span>
+          </label>
 
           {/* Actions */}
           <div className="pt-2 flex items-center justify-end gap-2.5">

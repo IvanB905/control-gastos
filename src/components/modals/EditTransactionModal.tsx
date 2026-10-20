@@ -23,6 +23,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [moneda, setMoneda] = useState<TipoMoneda>('COP');
   const [fecha, setFecha] = useState('');
   const [estado, setEstado] = useState<EstadoMovimiento>('completado');
+  const [esRecurrente, setEsRecurrente] = useState(false);
 
   useEffect(() => {
     if (movimiento) {
@@ -33,6 +34,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       setMoneda(movimiento.moneda || 'COP');
       setFecha(movimiento.fecha);
       setEstado(movimiento.estado);
+      setEsRecurrente(movimiento.es_recurrente || false);
     }
   }, [movimiento]);
 
@@ -53,6 +55,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       moneda,
       fecha,
       estado,
+      es_recurrente: esRecurrente,
     });
 
     onClose();
@@ -209,6 +212,17 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
               </select>
             </div>
           </div>
+
+          {/* Es recurrente */}
+          <label className="flex items-center gap-2 pt-1 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={esRecurrente}
+              onChange={(e) => setEsRecurrente(e.target.checked)}
+              className="w-4 h-4 rounded border-zinc-300 dark:border-zinc-700 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+            />
+            <span>Gasto o ingreso recurrente (fijo mensual)</span>
+          </label>
 
           {/* Actions */}
           <div className="pt-3 flex items-center justify-end gap-2.5">
