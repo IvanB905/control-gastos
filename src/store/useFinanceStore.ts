@@ -143,7 +143,38 @@ const loadSavedData = () => {
   return null;
 };
 
-const savedLocalData = loadSavedData();
+const rawSavedLocalData = loadSavedData();
+
+// Actualiza el perfil inicial dentro de datos locales antiguos sin tocar
+// movimientos, categorías, presupuestos ni metas del usuario.
+const migrateSavedProfile = (saved: any) => {
+  if (!saved || saved.perfilPersonalVersion >= 1 || !Array.isArray(saved.cuentas)) return saved;
+
+  const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const profileByName = new Map(DEFAULT_CUENTAS.map((cuenta) => [normalize(cuenta.nombre), cuenta]));
+  const matchingAccounts = saved.cuentas.filter((cuenta: Cuenta) => profileByName.has(normalize(cuenta.nombre)));
+  if (matchingAccounts.length === 0) return saved;
+
+  const cuentasActualizadas = saved.cuentas.map((cuenta: Cuenta) => {
+    const perfil = profileByName.get(normalize(cuenta.nombre));
+    if (!perfil) return cuenta;
+    // Conserva el ID para no romper movimientos asociados a la cuenta.
+    return { ...cuenta, ...perfil, id: cuenta.id, user_id: cuenta.user_id || perfil.user_id };
+  });
+  const nombresExistentes = new Set(cuentasActualizadas.map((cuenta: Cuenta) => normalize(cuenta.nombre)));
+  DEFAULT_CUENTAS.forEach((cuenta) => {
+    if (!nombresExistentes.has(normalize(cuenta.nombre))) cuentasActualizadas.push(cuenta);
+  });
+
+  return { ...saved, cuentas: cuentasActualizadas, perfilPersonalVersion: 1 };
+};
+
+const savedLocalData = migrateSavedProfile(rawSavedLocalData);
+if (savedLocalData && savedLocalData !== rawSavedLocalData) {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(savedLocalData));
+  } catch (e) {}
+}
 
 const persistLocally = (state: FinanceState) => {
   try {
@@ -155,6 +186,7 @@ const persistLocally = (state: FinanceState) => {
         movimientos: state.movimientos,
         presupuestos: state.presupuestos,
         metasAhorro: state.metasAhorro,
+        perfilPersonalVersion: 1,
       })
     );
   } catch (e) {}
