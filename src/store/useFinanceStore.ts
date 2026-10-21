@@ -123,6 +123,7 @@ interface FinanceState {
   agregarCuenta: (cuenta: Omit<Cuenta, 'id' | 'created_at' | 'saldo_actual'>) => Promise<void>;
   actualizarSaldoCuenta: (id: string, saldoActual: number, saldoFecha: string) => Promise<void>;
   eliminarCuenta: (id: string) => Promise<void>;
+  consolidarCuentas: (origenId: string, destinoId: string) => Promise<number>;
   realizarTransferencia: (origenId: string, destinoId: string, monto: number, descripcion: string, fecha: string) => Promise<void>;
   agregarPresupuesto: (presupuesto: Omit<Presupuesto, 'id'>) => Promise<void>;
   eliminarPresupuesto: (id: string) => Promise<void>;
@@ -195,6 +196,7 @@ const persistLocally = (state: FinanceState) => {
 };
 
 const normalizeSyncKey = (value: unknown) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('es-CO');
+const accountSyncKey = (account: Cuenta) => [normalizeSyncKey(account.nombre), account.tipo, account.moneda].join('|');
 
 const movementSyncKey = (movement: Movimiento, accountIdentity?: string) => {
   const importId = movement.notas?.match(/\[import:([a-z0-9-]+)\]/i)?.[1];
@@ -256,7 +258,7 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
   const cloudAccounts = (accountResult.data || []) as Cuenta[];
   const accountIds = new Map<string, string>();
   const localAccountByCloudId = new Map<string, Cuenta>();
-  const accountKey = (account: Cuenta) => [normalizeSyncKey(account.nombre), account.tipo, account.moneda].join('|');
+  const accountKey = accountSyncKey;
 
   for (const localAccount of local.cuentas) {
     const key = accountKey(localAccount);
@@ -762,14 +764,99 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   eliminarCuenta: async (id) => {
-    set((state) => ({
-      cuentas: state.cuentas.filter((c) => c.id !== id),
-    }));
-    persistLocally(get());
+    const { cuentas, movimientos } = get();
+    if (movimientos.some((movimiento) => movimiento.cuenta_id === id)) {
+      throw new Error('Esta cuenta tiene movimientos. Consolídala con otra cuenta antes de eliminarla.');
+    }
 
-    try {
-      await supabase.from('cuentas').delete().eq('id', id);
-    } catch (e) {}
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para eliminar una cuenta.');
+    const { data: movimientosNube, error: lecturaError } = await supabase
+      .from('movimientos')
+      .select('id')
+      .eq('user_id', session.user.id)
+      .eq('cuenta_id', id);
+    if (lecturaError) throw lecturaError;
+    if (movimientosNube?.length) {
+      throw new Error('Esta cuenta aún tiene movimientos en la nube. Consolídala antes de eliminarla.');
+    }
+
+    const { error } = await supabase
+      .from('cuentas')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', session.user.id);
+    if (error) throw error;
+
+    set((state) => ({ cuentas: state.cuentas.filter((cuenta) => cuenta.id !== id) }));
+    persistLocally(get());
+  },
+
+  consolidarCuentas: async (origenId, destinoId) => {
+    if (origenId === destinoId) throw new Error('Selecciona dos cuentas diferentes.');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para consolidar tus cuentas.');
+
+    const { cuentas } = get();
+    const origen = cuentas.find((cuenta) => cuenta.id === origenId);
+    const destino = cuentas.find((cuenta) => cuenta.id === destinoId);
+    if (!origen || !destino || accountSyncKey(origen) !== accountSyncKey(destino)) {
+      throw new Error('Solo se pueden consolidar cuentas duplicadas del mismo tipo y moneda.');
+    }
+
+    const userId = session.user.id;
+    const { data: filasOrigen, error: lecturaError } = await supabase
+      .from('movimientos')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('cuenta_id', origenId);
+    if (lecturaError) throw lecturaError;
+
+    const movimientosPorReasignar = filasOrigen || [];
+    if (movimientosPorReasignar.length > 0) {
+      const { data: reasignados, error: reasignacionError } = await supabase
+        .from('movimientos')
+        .update({ cuenta_id: destinoId })
+        .eq('user_id', userId)
+        .eq('cuenta_id', origenId)
+        .select('id');
+      if (reasignacionError) throw reasignacionError;
+      if ((reasignados || []).length !== movimientosPorReasignar.length) {
+        throw new Error('La cantidad de movimientos cambió durante la consolidación. No se eliminó la cuenta duplicada; vuelve a cargar y reintenta.');
+      }
+    }
+
+    // El trigger de movimientos recalcula saldos durante la reasignación.
+    // Conserva el saldo de referencia de la cuenta que se mantiene.
+    const { error: saldoError } = await supabase
+      .from('cuentas')
+      .update({ saldo_actual: destino.saldo_actual, saldo_fecha: destino.saldo_fecha || null })
+      .eq('id', destinoId)
+      .eq('user_id', userId);
+    if (saldoError) throw new Error(`Los movimientos se reasignaron, pero no se pudo conservar el saldo: ${saldoError.message}`);
+
+    const { data: eliminadas, error: eliminacionError } = await supabase
+      .from('cuentas')
+      .delete()
+      .eq('id', origenId)
+      .eq('user_id', userId)
+      .select('id');
+    if (eliminacionError) throw new Error(`Los movimientos se conservaron en la cuenta principal, pero no se pudo quitar el duplicado: ${eliminacionError.message}`);
+    if (!eliminadas?.some((cuenta) => cuenta.id === origenId)) {
+      throw new Error('Los movimientos se conservaron, pero no se encontró el duplicado para eliminarlo. Recarga la vista.');
+    }
+
+    set((state) => ({
+      cuentas: state.cuentas.filter((cuenta) => cuenta.id !== origenId),
+      movimientos: dedupeImportedMovements(state.movimientos.map((movimiento) => (
+        movimiento.cuenta_id === origenId ? { ...movimiento, cuenta_id: destinoId } : movimiento
+      ))),
+      syncError: null,
+    }));
+    get().calcularResumenes();
+    persistLocally(get());
+    return movimientosPorReasignar.length;
   },
 
   realizarTransferencia: async (origenId, destinoId, monto, descripcion, fecha) => {

@@ -38,12 +38,52 @@ const getAccountIcon = (tipo: TipoCuenta) => {
 };
 
 export const AccountsView: React.FC = () => {
-  const { cuentas, movimientos, eliminarCuenta } = useFinanceStore();
+  const { cuentas, movimientos, eliminarCuenta, consolidarCuentas } = useFinanceStore();
 
   const [isAccountModalOpen, setAccountModalOpen] = useState(false);
   const [isTransferModalOpen, setTransferModalOpen] = useState(false);
   const [selectedCuentaId, setSelectedCuentaId] = useState<string | null>(null);
   const [cuentaParaActualizar, setCuentaParaActualizar] = useState<typeof cuentas[number] | null>(null);
+  const [mergingCuentaId, setMergingCuentaId] = useState<string | null>(null);
+  const [mergeMessage, setMergeMessage] = useState<string | null>(null);
+
+  const movementCounts = new Map(cuentas.map((cuenta) => [
+    cuenta.id,
+    movimientos.filter((movimiento) => movimiento.cuenta_id === cuenta.id).length,
+  ]));
+  const accountGroups = new Map<string, typeof cuentas>();
+  cuentas.forEach((cuenta) => {
+    const key = `${cuenta.nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('es-CO')}|${cuenta.tipo}|${cuenta.moneda}`;
+    accountGroups.set(key, [...(accountGroups.get(key) || []), cuenta]);
+  });
+  const mergeTargetBySource = new Map<string, typeof cuentas[number]>();
+  accountGroups.forEach((group) => {
+    if (group.length < 2) return;
+    const ranked = [...group].sort((a, b) => (
+      (movementCounts.get(b.id) || 0) - (movementCounts.get(a.id) || 0)
+      || (a.created_at || '').localeCompare(b.created_at || '')
+    ));
+    ranked.slice(1).forEach((source) => mergeTargetBySource.set(source.id, ranked[0]));
+  });
+
+  const handleConsolidateAccount = async (source: typeof cuentas[number], target: typeof cuentas[number]) => {
+    const visibleCount = movementCounts.get(source.id) || 0;
+    if (!window.confirm(`Se moverán todos los movimientos asociados a esta cuenta duplicada a “${target.nombre}” y después se quitará el duplicado. La cuenta que se conservará tiene ${movementCounts.get(target.id) || 0} movimientos visibles. ¿Continuar?`)) return;
+
+    setMergingCuentaId(source.id);
+    setMergeMessage(null);
+    try {
+      const movedCount = await consolidarCuentas(source.id, target.id);
+      setMergeMessage(`Cuenta consolidada. Se conservaron sus movimientos en “${target.nombre}”.`);
+      if (movedCount !== visibleCount) {
+        setMergeMessage(`Cuenta consolidada. Se reasignaron ${movedCount} movimientos guardados en la nube a “${target.nombre}”.`);
+      }
+    } catch (error) {
+      setMergeMessage(error instanceof Error ? error.message : 'No se pudo consolidar la cuenta.');
+    } finally {
+      setMergingCuentaId(null);
+    }
+  };
 
   // Cálculos consolidados
   const totalCOP = cuentas
@@ -95,6 +135,12 @@ export const AccountsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {mergeMessage && (
+        <p role="status" className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-xs font-medium text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200">
+          {mergeMessage}
+        </p>
+      )}
 
       {/* Summary Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
@@ -176,11 +222,13 @@ export const AccountsView: React.FC = () => {
                     {cuenta.moneda}
                   </span>
 
-                  {cuentas.length > 1 && (
+                  {cuentas.length > 1 && (movementCounts.get(cuenta.id) || 0) === 0 && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        eliminarCuenta(cuenta.id);
+                        void eliminarCuenta(cuenta.id).catch((error) => {
+                          setMergeMessage(error instanceof Error ? error.message : 'No se pudo eliminar la cuenta.');
+                        });
                       }}
                       className="p-1 text-zinc-300 hover:text-red-500 rounded-lg transition-colors"
                       title="Eliminar cuenta"
@@ -206,6 +254,21 @@ export const AccountsView: React.FC = () => {
                   {isSelected ? 'Ocultar historial' : 'Ver movimientos →'}
                 </span>
               </div>
+
+              {mergeTargetBySource.has(cuenta.id) && (
+                <button
+                  type="button"
+                  disabled={mergingCuentaId !== null}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const target = mergeTargetBySource.get(cuenta.id);
+                    if (target) void handleConsolidateAccount(cuenta, target);
+                  }}
+                  className="mt-4 w-full rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 disabled:cursor-wait disabled:opacity-60 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950"
+                >
+                  {mergingCuentaId === cuenta.id ? 'Consolidando…' : `Consolidar con la cuenta de ${movementCounts.get(mergeTargetBySource.get(cuenta.id)!.id) || 0} movimientos`}
+                </button>
+              )}
 
               {(cuenta.limite_credito || cuenta.ingreso_mensual_estimado || cuenta.aporte_mensual || cuenta.plazo_meses || cuenta.saldo_fecha) && (
                 <div className="mt-4 space-y-1 border-t border-zinc-100 pt-3 text-[11px] text-zinc-500 dark:border-zinc-800">
