@@ -468,6 +468,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
+        set({ cuentas: [], categorias: [], movimientos: [], presupuestos: [], metasAhorro: [] });
         get().calcularResumenes();
         set({ isLoading: false });
         return;

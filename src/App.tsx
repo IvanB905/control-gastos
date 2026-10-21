@@ -21,7 +21,7 @@ import { useAuthStore } from './store/useAuthStore';
 export function App() {
   const { cargarDatos } = useFinanceStore();
   const { activeTab, theme } = useAppStore();
-  const { initAuth, user } = useAuthStore();
+  const { initAuth, user, isLoading: isAuthLoading, setAuthModalOpen } = useAuthStore();
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -36,8 +36,39 @@ export function App() {
   }, [initAuth]);
 
   useEffect(() => {
+    if (isAuthLoading) return;
     cargarDatos();
-  }, [cargarDatos, user]);
+  }, [cargarDatos, user, isAuthLoading]);
+
+  if (isAuthLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 text-sm text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400" role="status" aria-live="polite">
+        Verificando sesión…
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-5 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+        <section className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-2xl" aria-hidden="true">🔒</div>
+          <h1 className="text-xl font-semibold">Tus finanzas están protegidas</h1>
+          <p className="mt-2 text-sm leading-6 text-zinc-500 dark:text-zinc-400">
+            Inicia sesión para consultar tus cuentas y movimientos. Sin una sesión activa no se muestra información financiera.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAuthModalOpen(true)}
+            className="mt-6 w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
+          >
+            Iniciar sesión
+          </button>
+        </section>
+        <AuthModal />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans antialiased transition-colors">

@@ -6,7 +6,12 @@ ALTER TABLE public.cuentas
   ADD COLUMN IF NOT EXISTS ingreso_mensual_estimado NUMERIC(12, 2),
   ADD COLUMN IF NOT EXISTS aporte_mensual NUMERIC(12, 2),
   ADD COLUMN IF NOT EXISTS plazo_meses INT,
-  ADD COLUMN IF NOT EXISTS saldo_fecha DATE;
+  ADD COLUMN IF NOT EXISTS saldo_fecha DATE,
+  ADD COLUMN IF NOT EXISTS moneda VARCHAR(3) NOT NULL DEFAULT 'COP';
+
+ALTER TABLE public.cuentas DROP CONSTRAINT IF EXISTS cuentas_moneda_check;
+ALTER TABLE public.cuentas ADD CONSTRAINT cuentas_moneda_check
+  CHECK (moneda IN ('COP', 'USD'));
 
 ALTER TABLE public.cuentas DROP CONSTRAINT IF EXISTS cuentas_tipo_check;
 ALTER TABLE public.cuentas ADD CONSTRAINT cuentas_tipo_check
