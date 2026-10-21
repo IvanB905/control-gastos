@@ -195,16 +195,28 @@ const persistLocally = (state: FinanceState) => {
 
 const normalizeSyncKey = (value: unknown) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('es-CO');
 
-const movementSyncKey = (movement: Movimiento) => {
+const movementSyncKey = (movement: Movimiento, accountIdentity?: string) => {
   const importId = movement.notas?.match(/\[import:([a-z0-9-]+)\]/i)?.[1];
+  if (importId) return 'import:' + importId;
   return [
-    movement.cuenta_id,
-    importId ? `import:${importId}` : movement.fecha,
+    accountIdentity || movement.cuenta_id,
+    movement.fecha,
     movement.tipo,
     Number(movement.monto).toFixed(2),
     normalizeSyncKey(movement.descripcion),
     movement.moneda,
   ].join('|');
+};
+
+const dedupeImportedMovements = (movements: Movimiento[]) => {
+  const seenMarkers = new Set<string>();
+  return movements.filter((movement) => {
+    const importId = movement.notas?.match(/\[import:([a-z0-9-]+)\]/i)?.[1];
+    if (!importId) return true;
+    if (seenMarkers.has(importId)) return false;
+    seenMarkers.add(importId);
+    return true;
+  });
 };
 
 const insertRowsWithSchemaFallback = async (table: 'cuentas' | 'categorias' | 'movimientos' | 'presupuestos', rows: Record<string, unknown>[]) => {
@@ -290,7 +302,11 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
     ...movement,
     moneda: movement.moneda || accountCurrencyById.get(movement.cuenta_id) || 'COP',
   }));
-  const knownMovementKeys = new Set(cloudMovements.map(movementSyncKey));
+  const cloudAccountIdentityById = new Map(cloudAccounts.map((account) => [account.id, accountKey(account)]));
+  const dedupedCloudMovements = dedupeImportedMovements(cloudMovements);
+  const knownMovementKeys = new Set(dedupedCloudMovements.map((movement) =>
+    movementSyncKey(movement, cloudAccountIdentityById.get(movement.cuenta_id))
+  ));
   const missingMovements = local.movimientos.flatMap((movement) => {
     const mappedAccount = accountIds.get(movement.cuenta_id);
     if (!mappedAccount) return [];
@@ -300,15 +316,16 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
       cuenta_id: mappedAccount,
       categoria_id: movement.categoria_id ? categoryIds.get(movement.categoria_id) || null : null,
     };
-    if (knownMovementKeys.has(movementSyncKey(synced))) return [];
-    knownMovementKeys.add(movementSyncKey(synced));
-    const { id: _id, created_at: _createdAt, cuenta: _account, categoria: _category, moneda: _currency, ...payload } = synced;
+    const key = movementSyncKey(synced, cloudAccountIdentityById.get(mappedAccount));
+    if (knownMovementKeys.has(key)) return [];
+    knownMovementKeys.add(key);
+    const { id: _id, created_at: _createdAt, cuenta: _account, categoria: _category, ...payload } = synced;
     return [payload];
   });
   if (missingMovements.length) {
     const result = await insertRowsWithSchemaFallback('movimientos', missingMovements);
     if (result.error) throw result.error;
-    cloudMovements.push(...((result.data || []) as Movimiento[]).map((movement) => ({
+    dedupedCloudMovements.push(...((result.data || []) as Movimiento[]).map((movement) => ({
       ...movement,
       moneda: movement.moneda || accountCurrencyById.get(movement.cuenta_id) || 'COP',
     })));
@@ -362,7 +379,7 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
     const localBudget = localBudgetByCloudKey.get([budget.categoria_id, budget.mes, budget.anio].join('|'));
     return { ...budget, moneda: budget.moneda || localBudget?.moneda || 'COP' };
   });
-  return { cuentas: accountsForState, categorias: cloudCategories, movimientos: cloudMovements, presupuestos: budgetsForState };
+  return { cuentas: accountsForState, categorias: cloudCategories, movimientos: dedupedCloudMovements, presupuestos: budgetsForState };
 };
 
 const localSyncsInFlight = new Map<string, ReturnType<typeof performLocalDataSync>>();
@@ -517,7 +534,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         set({ categorias: resCategorias.data });
       }
       if (resMovimientos.data && resMovimientos.data.length > 0) {
-        set({ movimientos: resMovimientos.data });
+        set({ movimientos: dedupeImportedMovements(resMovimientos.data as Movimiento[]) });
       }
       if (resPresupuestos.data && resPresupuestos.data.length > 0) {
         set({ presupuestos: resPresupuestos.data });
