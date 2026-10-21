@@ -3,6 +3,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import { KpiCards } from './components/dashboard/KpiCards';
+import { MonthlySummary } from './components/dashboard/MonthlySummary';
 import { AccountsGrid } from './components/dashboard/AccountsGrid';
 import { RecentTransactions } from './components/dashboard/RecentTransactions';
 import { BudgetProgress } from './components/dashboard/BudgetProgress';
@@ -99,6 +100,8 @@ export function App() {
               <section>
                 <KpiCards />
               </section>
+
+              <MonthlySummary />
 
               {/* Wallets & Bank Accounts Carousel/Grid */}
               <section>

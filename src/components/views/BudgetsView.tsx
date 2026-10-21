@@ -150,7 +150,8 @@ export const BudgetsView: React.FC = () => {
             {presupuestosFiltrados.map((p) => {
               const cat = categorias.find((c) => c.id === p.categoria_id);
               const gastado = p.gasto_actual || 0;
-              const porcentaje = Math.min(Math.round((gastado / p.monto_limite) * 100), 100);
+              const porcentaje = p.monto_limite > 0 ? Math.round((gastado / p.monto_limite) * 100) : 0;
+              const isExceeded = gastado > p.monto_limite;
               const isDanger = porcentaje >= 90;
               const isWarning = porcentaje >= 75 && !isDanger;
 
@@ -196,13 +197,19 @@ export const BudgetsView: React.FC = () => {
                         className={`h-full rounded-full transition-all duration-300 ${
                           isDanger ? 'bg-rose-500' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'
                         }`}
-                        style={{ width: `${porcentaje}%` }}
+                        style={{ width: `${Math.min(porcentaje, 100)}%` }}
                       />
                     </div>
                     <div className="flex justify-between text-[10px] font-semibold text-zinc-400">
                       <span>{porcentaje}% consumido</span>
-                      <span className={isDanger ? 'text-rose-500 font-bold' : isWarning ? 'text-amber-500' : 'text-emerald-500'}>
-                        {isDanger ? '¡Casi al límite!' : isWarning ? 'Consumo alto' : 'Saludable'}
+                      <span role={isExceeded ? 'alert' : 'status'} className={isExceeded || isDanger ? 'text-rose-500 font-bold' : isWarning ? 'text-amber-500' : 'text-emerald-500'}>
+                        {isExceeded
+                          ? `Superado por ${formatCurrency(gastado - p.monto_limite, p.moneda)}`
+                          : isDanger
+                            ? `Quedan ${formatCurrency(p.monto_limite - gastado, p.moneda)}`
+                            : isWarning
+                              ? `Consumo alto · quedan ${formatCurrency(p.monto_limite - gastado, p.moneda)}`
+                              : `Disponible ${formatCurrency(p.monto_limite - gastado, p.moneda)}`}
                       </span>
                     </div>
                   </div>

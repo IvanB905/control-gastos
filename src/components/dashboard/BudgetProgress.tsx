@@ -35,9 +35,17 @@ export const BudgetProgress: React.FC = () => {
           presupuestosFiltrados.map((p) => {
             const cat = categorias.find((c) => c.id === p.categoria_id);
             const gastado = p.gasto_actual || 0;
-            const porcentaje = Math.min(Math.round((gastado / p.monto_limite) * 100), 100);
+            const porcentaje = p.monto_limite > 0 ? Math.round((gastado / p.monto_limite) * 100) : 0;
+            const isExceeded = gastado > p.monto_limite;
             const isDanger = porcentaje >= 90;
             const isWarning = porcentaje >= 75 && !isDanger;
+            const status = isExceeded
+              ? `Superado por ${formatCurrency(gastado - p.monto_limite, p.moneda)}`
+              : porcentaje >= 90
+                ? `Quedan ${formatCurrency(p.monto_limite - gastado, p.moneda)}`
+                : porcentaje >= 75
+                  ? `Vas en ${porcentaje}% del límite`
+                  : `Disponible ${formatCurrency(p.monto_limite - gastado, p.moneda)}`;
 
             return (
               <div key={p.id} className="space-y-1.5">
@@ -47,14 +55,21 @@ export const BudgetProgress: React.FC = () => {
                   </span>
                   <span className="text-zinc-500 dark:text-zinc-400 font-mono">
                     <span className="font-bold text-zinc-900 dark:text-white">{formatCurrency(gastado, p.moneda)}</span> / {formatCurrency(p.monto_limite, p.moneda)}
-                    <span className={`ml-2 font-bold ${isDanger ? 'text-rose-500' : isWarning ? 'text-amber-500' : 'text-emerald-500'}`}>
+                    <span className={`ml-2 font-bold ${isExceeded || isDanger ? 'text-rose-500' : isWarning ? 'text-amber-500' : 'text-emerald-500'}`}>
                       ({porcentaje}%)
                     </span>
                   </span>
                 </div>
 
                 {/* Progress Bar Track */}
-                <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden"
+                  role="progressbar"
+                  aria-label={`${cat?.nombre || 'Categoría'}: ${porcentaje}% del presupuesto utilizado`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.min(porcentaje, 100)}
+                >
                   <div
                     className={`h-full rounded-full transition-all duration-300 ${
                       isDanger 
@@ -63,9 +78,12 @@ export const BudgetProgress: React.FC = () => {
                         ? 'bg-amber-500' 
                         : 'bg-emerald-500'
                     }`}
-                    style={{ width: `${porcentaje}%` }}
+                    style={{ width: `${Math.min(porcentaje, 100)}%` }}
                   />
                 </div>
+                <p role={isExceeded ? 'alert' : 'status'} className={`text-[11px] font-medium ${isExceeded || isDanger ? 'text-rose-600 dark:text-rose-400' : isWarning ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                  {status}
+                </p>
               </div>
             );
           })
