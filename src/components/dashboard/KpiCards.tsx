@@ -46,28 +46,28 @@ export const KpiCards: React.FC = () => {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
       {cards.map((card, idx) => {
         const Icon = card.icon;
         return (
           <div
             key={idx}
-            className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-150 flex flex-col justify-between"
+            className="p-3.5 sm:p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-150 flex flex-col justify-between"
           >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 tracking-tight">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] sm:text-xs font-semibold text-zinc-500 dark:text-zinc-400 tracking-tight truncate">
                 {card.title}
               </span>
-              <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${card.bgIcon}`}>
-                <Icon className={`w-4 h-4 ${card.color}`} />
+              <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-xl border flex items-center justify-center shrink-0 ${card.bgIcon}`}>
+                <Icon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${card.color}`} />
               </div>
             </div>
 
-            <div className="mt-4">
-              <div className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">
+            <div className="mt-2.5 sm:mt-4">
+              <div className="text-base sm:text-2xl font-bold tracking-tight text-zinc-900 dark:text-white truncate">
                 {formatCurrency(card.amount, moneda)}
               </div>
-              <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1 font-medium">
+              <p className="text-[10px] sm:text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5 sm:mt-1 font-medium truncate">
                 {card.subtitle}
               </p>
             </div>

@@ -93,37 +93,37 @@ export const AccountsView: React.FC = () => {
       </div>
 
       {/* Summary Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
-          <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
-            Saldo Total Disponible (COP)
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
+            Disponible (COP)
           </span>
-          <span className="text-xl font-bold text-zinc-900 dark:text-white block mt-1">
+          <span className="text-base sm:text-xl font-bold text-zinc-900 dark:text-white block mt-1 truncate">
             {formatCurrency(totalCOP, 'COP')}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
-          <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
-            Saldo Total en Dólares (USD)
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
+            Dólares (USD)
           </span>
-          <span className="text-xl font-bold text-blue-600 dark:text-blue-400 block mt-1">
+          <span className="text-base sm:text-xl font-bold text-blue-600 dark:text-blue-400 block mt-1 truncate">
             {formatCurrency(totalUSD, 'USD')}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
-          <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
-            Deuda Actual en Tarjetas
+        <div className="col-span-2 sm:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
+            Deuda en Tarjetas
           </span>
-          <span className="text-xl font-bold text-rose-600 dark:text-rose-400 block mt-1">
+          <span className="text-base sm:text-xl font-bold text-rose-600 dark:text-rose-400 block mt-1 truncate">
             {formatCurrency(deudaTarjetas, 'COP')}
           </span>
         </div>
       </div>
 
       {/* Accounts Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {cuentas.map((cuenta) => {
           const Icon = getAccountIcon(cuenta.tipo);
           const isSelected = selectedCuentaId === cuenta.id;

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
+import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import { KpiCards } from './components/dashboard/KpiCards';
 import { AccountsGrid } from './components/dashboard/AccountsGrid';
 import { RecentTransactions } from './components/dashboard/RecentTransactions';
@@ -47,7 +48,7 @@ export function App() {
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <Header />
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 md:space-y-7">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 md:space-y-7 pb-24 md:pb-8">
           {activeTab === 'dashboard' && (
             <>
               {/* Top KPI Metric Cards */}
@@ -99,6 +100,9 @@ export function App() {
           )}
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation Bar (Visible on mobile only) */}
+      <MobileBottomNav />
 
       {/* Modal for adding new transactions */}
       <TransactionModal />

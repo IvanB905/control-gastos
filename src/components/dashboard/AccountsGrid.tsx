@@ -51,7 +51,7 @@ export const AccountsGrid: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3.5">
         {cuentas.map((cuenta) => {
           const Icon = getAccountIcon(cuenta.tipo);
           const isNegative = cuenta.saldo_actual < 0;
@@ -59,30 +59,30 @@ export const AccountsGrid: React.FC = () => {
           return (
             <div
               key={cuenta.id}
-              className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs flex flex-col justify-between hover:shadow-sm transition-all"
+              className="p-3 sm:p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs flex flex-col justify-between hover:shadow-sm transition-all"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 truncate max-w-[130px]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[11px] sm:text-xs font-semibold text-zinc-700 dark:text-zinc-300 truncate">
                   {cuenta.nombre}
                 </span>
                 <div 
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-white"
+                  className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center text-white shrink-0"
                   style={{ backgroundColor: cuenta.color }}
                 >
-                  <Icon className="w-3.5 h-3.5" />
+                  <Icon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                 </div>
               </div>
 
-              <div className="mt-3">
+              <div className="mt-2.5 sm:mt-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 block">
+                  <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-wider text-zinc-400 block truncate">
                     {cuenta.tipo.replace('_', ' ')}
                   </span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                  <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
                     {cuenta.moneda}
                   </span>
                 </div>
-                <span className={`text-lg font-bold tracking-tight block mt-0.5 ${isNegative ? 'text-rose-500' : 'text-zinc-900 dark:text-white'}`}>
+                <span className={`text-sm sm:text-lg font-bold tracking-tight block mt-0.5 truncate ${isNegative ? 'text-rose-500' : 'text-zinc-900 dark:text-white'}`}>
                   {formatCurrency(cuenta.saldo_actual, cuenta.moneda)}
                 </span>
               </div>

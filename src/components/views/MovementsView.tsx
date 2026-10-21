@@ -119,34 +119,34 @@ export const MovementsView: React.FC = () => {
       </div>
 
       {/* Summary Chips */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs flex items-center justify-between">
-          <span className="text-xs text-zinc-500">Movimientos Filtrados</span>
-          <span className="text-sm font-bold text-zinc-900 dark:text-white">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3">
+        <div className="col-span-2 sm:col-span-1 p-3 sm:p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs flex items-center justify-between">
+          <span className="text-[11px] sm:text-xs text-zinc-500">Filtrados</span>
+          <span className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white">
             {filteredMovimientos.length} de {movimientos.length}
           </span>
         </div>
 
-        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs flex items-center justify-between">
-          <span className="text-xs text-zinc-500">Ingresos COP (Filtro)</span>
-          <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+        <div className="p-3 sm:p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs flex items-center justify-between">
+          <span className="text-[11px] sm:text-xs text-zinc-500">Ingresos</span>
+          <span className="text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400">
             +{formatCurrency(totalIngresosCOP, 'COP')}
           </span>
         </div>
 
-        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs flex items-center justify-between">
-          <span className="text-xs text-zinc-500">Gastos COP (Filtro)</span>
-          <span className="text-sm font-bold text-rose-600 dark:text-rose-400">
+        <div className="p-3 sm:p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs flex items-center justify-between">
+          <span className="text-[11px] sm:text-xs text-zinc-500">Gastos</span>
+          <span className="text-xs sm:text-sm font-bold text-rose-600 dark:text-rose-400">
             -{formatCurrency(totalGastosCOP, 'COP')}
           </span>
         </div>
       </div>
 
       {/* Filters Toolbar */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-4 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-3 sm:p-4 shadow-xs space-y-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-3">
           {/* Search */}
-          <div className="relative lg:col-span-2">
+          <div className="relative col-span-2 lg:col-span-2">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
               type="text"

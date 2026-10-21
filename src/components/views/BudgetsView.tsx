@@ -87,39 +87,39 @@ export const BudgetsView: React.FC = () => {
       </div>
 
       {/* KPI Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
-          <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
-            Presupuesto Asignado
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
+            Presupuesto
           </span>
-          <span className="text-xl font-bold text-zinc-900 dark:text-white block mt-1">
+          <span className="text-base sm:text-xl font-bold text-zinc-900 dark:text-white block mt-1 truncate">
             {formatCurrency(totalPresupuestado, moneda)}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
-          <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
             Total Gastado
           </span>
-          <span className="text-xl font-bold text-rose-600 dark:text-rose-400 block mt-1">
+          <span className="text-base sm:text-xl font-bold text-rose-600 dark:text-rose-400 block mt-1 truncate">
             {formatCurrency(totalGastado, moneda)}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
-          <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
-            Margen Libre Disponible
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
+            Margen Libre
           </span>
-          <span className={`text-xl font-bold block mt-1 ${margenDisponible < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+          <span className={`text-base sm:text-xl font-bold block mt-1 truncate ${margenDisponible < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
             {formatCurrency(margenDisponible, moneda)}
           </span>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
-          <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block">
-            Acumulado en Ahorros
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
+            En Ahorros
           </span>
-          <span className="text-xl font-bold text-indigo-600 dark:text-indigo-400 block mt-1">
+          <span className="text-base sm:text-xl font-bold text-indigo-600 dark:text-indigo-400 block mt-1 truncate">
             {formatCurrency(totalAhorradoMetas, moneda)}
           </span>
         </div>
