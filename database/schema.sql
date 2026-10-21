@@ -39,15 +39,30 @@ CREATE TABLE IF NOT EXISTS public.cuentas (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     nombre VARCHAR(100) NOT NULL,
-    tipo VARCHAR(20) NOT NULL DEFAULT 'efectivo' CHECK (tipo IN ('efectivo', 'banco', 'tarjeta_credito', 'ahorro', 'otro')),
+    tipo VARCHAR(30) NOT NULL DEFAULT 'efectivo' CHECK (tipo IN ('efectivo', 'banco', 'nequi_daviplata', 'tarjeta_credito', 'credito_libre_inversion', 'ahorro', 'otro')),
     saldo_inicial NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     saldo_actual NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    limite_credito NUMERIC(12, 2),
+    ingreso_mensual_estimado NUMERIC(12, 2),
+    aporte_mensual NUMERIC(12, 2),
+    plazo_meses INT,
+    saldo_fecha DATE,
     color VARCHAR(20) DEFAULT '#10B981',
     icono VARCHAR(50) DEFAULT 'Wallet',
     es_predeterminada BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
+
+ALTER TABLE public.cuentas ALTER COLUMN tipo TYPE VARCHAR(30);
+ALTER TABLE public.cuentas ADD COLUMN IF NOT EXISTS limite_credito NUMERIC(12, 2);
+ALTER TABLE public.cuentas ADD COLUMN IF NOT EXISTS ingreso_mensual_estimado NUMERIC(12, 2);
+ALTER TABLE public.cuentas ADD COLUMN IF NOT EXISTS aporte_mensual NUMERIC(12, 2);
+ALTER TABLE public.cuentas ADD COLUMN IF NOT EXISTS plazo_meses INT;
+ALTER TABLE public.cuentas ADD COLUMN IF NOT EXISTS saldo_fecha DATE;
+ALTER TABLE public.cuentas DROP CONSTRAINT IF EXISTS cuentas_tipo_check;
+ALTER TABLE public.cuentas ADD CONSTRAINT cuentas_tipo_check
+    CHECK (tipo IN ('efectivo', 'banco', 'nequi_daviplata', 'tarjeta_credito', 'credito_libre_inversion', 'ahorro', 'otro'));
 
 ALTER TABLE public.cuentas ENABLE ROW LEVEL SECURITY;
 

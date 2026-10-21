@@ -9,13 +9,15 @@ import {
   ArrowDownLeft, 
   ArrowUpRight, 
   ArrowRightLeft,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Upload,
 } from 'lucide-react';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { EditTransactionModal } from '../modals/EditTransactionModal';
 import type { Movimiento, TipoMovimiento, EstadoMovimiento } from '../../types';
+import { ImportMovementsModal } from '../modals/ImportMovementsModal';
 
 export const MovementsView: React.FC = () => {
   const { movimientos, categorias, cuentas, eliminarMovimiento } = useFinanceStore();
@@ -31,6 +33,7 @@ export const MovementsView: React.FC = () => {
 
   // Edit modal state
   const [editingMovement, setEditingMovement] = useState<Movimiento | null>(null);
+  const [isImportOpen, setImportOpen] = useState(false);
 
   // Apply filters
   const filteredMovimientos = movimientos.filter((m) => {
@@ -100,6 +103,14 @@ export const MovementsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto">
+          <button
+            onClick={() => setImportOpen(true)}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-colors shadow-xs cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5 text-blue-500" />
+            <span>Importar CSV</span>
+          </button>
+
           <button
             onClick={handleExportCSV}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-colors shadow-xs cursor-pointer"
@@ -313,6 +324,7 @@ export const MovementsView: React.FC = () => {
         isOpen={Boolean(editingMovement)}
         onClose={() => setEditingMovement(null)}
       />
+      <ImportMovementsModal isOpen={isImportOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
 };

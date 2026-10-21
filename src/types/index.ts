@@ -1,6 +1,6 @@
 export type TipoMovimiento = 'gasto' | 'ingreso' | 'transferencia';
 export type EstadoMovimiento = 'completado' | 'pendiente';
-export type TipoCuenta = 'banco' | 'efectivo' | 'nequi_daviplata' | 'tarjeta_credito' | 'ahorro' | 'otro';
+export type TipoCuenta = 'banco' | 'efectivo' | 'nequi_daviplata' | 'tarjeta_credito' | 'credito_libre_inversion' | 'ahorro' | 'otro';
 export type TipoMoneda = 'COP' | 'USD';
 
 export interface Perfil {
@@ -24,6 +24,11 @@ export interface Cuenta {
   color: string;
   icono: string;
   es_predeterminada: boolean;
+  limite_credito?: number;
+  ingreso_mensual_estimado?: number;
+  aporte_mensual?: number;
+  plazo_meses?: number;
+  saldo_fecha?: string;
   created_at?: string;
 }
 

@@ -2,27 +2,29 @@ import { create } from 'zustand';
 import type { Cuenta, Categoria, Movimiento, Presupuesto, MetaAhorro, ResumenMensual, TipoMoneda } from '../types';
 import { supabase } from '../lib/supabase';
 
-// Cuentas y billeteras colombianas y en USD
+// Configuración inicial basada en las cuentas informadas por el usuario.
 const DEFAULT_CUENTAS: Cuenta[] = [
   {
     id: 'c1',
     user_id: 'user1',
-    nombre: 'Bancolombia Ahorros',
+    nombre: 'Bancolombia Nómina',
     tipo: 'banco',
-    saldo_inicial: 3000000,
-    saldo_actual: 4850000,
+    saldo_inicial: 1931002.86,
+    saldo_actual: 1931002.86,
     moneda: 'COP',
     color: '#004481',
     icono: 'Landmark',
     es_predeterminada: true,
+    ingreso_mensual_estimado: 1869515,
+    saldo_fecha: '2026-09-30',
   },
   {
     id: 'c2',
     user_id: 'user1',
-    nombre: 'Nequi / Daviplata',
+    nombre: 'Nequi',
     tipo: 'nequi_daviplata',
-    saldo_inicial: 200000,
-    saldo_actual: 620000,
+    saldo_inicial: 0,
+    saldo_actual: 0,
     moneda: 'COP',
     color: '#E11900',
     icono: 'Smartphone',
@@ -31,38 +33,57 @@ const DEFAULT_CUENTAS: Cuenta[] = [
   {
     id: 'c3',
     user_id: 'user1',
-    nombre: 'Efectivo en Mano',
-    tipo: 'efectivo',
-    saldo_inicial: 100000,
-    saldo_actual: 180000,
+    nombre: 'Fondo Nacional del Ahorro',
+    tipo: 'ahorro',
+    saldo_inicial: 400000,
+    saldo_actual: 400000,
     moneda: 'COP',
-    color: '#10B981',
-    icono: 'Banknote',
+    color: '#F59E0B',
+    icono: 'ShieldCheck',
     es_predeterminada: false,
+    aporte_mensual: 200000,
+    saldo_fecha: '2026-10-21',
   },
   {
     id: 'c4',
     user_id: 'user1',
-    nombre: 'Tarjeta de Crédito',
+    nombre: 'Mastercard Bancolombia',
     tipo: 'tarjeta_credito',
-    saldo_inicial: 0,
-    saldo_actual: -540000,
+    saldo_inicial: -536271,
+    saldo_actual: -536271,
     moneda: 'COP',
     color: '#8B5CF6',
     icono: 'CreditCard',
     es_predeterminada: false,
+    limite_credito: 1500000,
+    saldo_fecha: '2026-10-21',
   },
   {
     id: 'c5',
     user_id: 'user1',
-    nombre: 'Cuenta Dólares (USD)',
-    tipo: 'ahorro',
-    saldo_inicial: 1000,
-    saldo_actual: 1450.00,
-    moneda: 'USD',
-    color: '#F59E0B',
-    icono: 'DollarSign',
+    nombre: 'Crédito libre inversión Bancolombia',
+    tipo: 'credito_libre_inversion',
+    saldo_inicial: -12600000,
+    saldo_actual: -12600000,
+    moneda: 'COP',
+    color: '#DC2626',
+    icono: 'CreditCard',
     es_predeterminada: false,
+    plazo_meses: 60,
+    saldo_fecha: '2026-10-21',
+  },
+  {
+    id: 'c6',
+    user_id: 'user1',
+    nombre: 'Mastercard Bancolombia USD',
+    tipo: 'tarjeta_credito',
+    saldo_inicial: -6,
+    saldo_actual: -6,
+    moneda: 'USD',
+    color: '#6366F1',
+    icono: 'CreditCard',
+    es_predeterminada: false,
+    saldo_fecha: '2026-09-30',
   },
 ];
 
@@ -77,142 +98,11 @@ const DEFAULT_CATEGORIAS: Categoria[] = [
   { id: 'cat8', user_id: 'user1', nombre: 'Rendimientos / Inversiones', tipo: 'ingreso', icono: 'TrendingUp', color: '#84CC16' },
 ];
 
-const DEFAULT_MOVIMIENTOS: Movimiento[] = [
-  {
-    id: 'm1',
-    user_id: 'user1',
-    cuenta_id: 'c1',
-    categoria_id: 'cat6',
-    tipo: 'ingreso',
-    monto: 4500000,
-    moneda: 'COP',
-    fecha: new Date().toISOString().slice(0, 10),
-    descripcion: 'Pago de Nómina / Salario mensual',
-    estado: 'completado',
-    es_recurrente: true,
-  },
-  {
-    id: 'm2',
-    user_id: 'user1',
-    cuenta_id: 'c1',
-    categoria_id: 'cat1',
-    tipo: 'gasto',
-    monto: 380000,
-    moneda: 'COP',
-    fecha: new Date().toISOString().slice(0, 10),
-    descripcion: 'Mercado del mes (Éxito / Jumbo)',
-    estado: 'completado',
-    es_recurrente: false,
-  },
-  {
-    id: 'm3',
-    user_id: 'user1',
-    cuenta_id: 'c2',
-    categoria_id: 'cat3',
-    tipo: 'gasto',
-    monto: 165000,
-    moneda: 'COP',
-    fecha: new Date().toISOString().slice(0, 10),
-    descripcion: 'Pago Servicios Públicos (EPM / Enel)',
-    estado: 'completado',
-    es_recurrente: true,
-  },
-  {
-    id: 'm4',
-    user_id: 'user1',
-    cuenta_id: 'c4',
-    categoria_id: 'cat4',
-    tipo: 'gasto',
-    monto: 48900,
-    moneda: 'COP',
-    fecha: new Date().toISOString().slice(0, 10),
-    descripcion: 'Suscripciones Netflix & Spotify',
-    estado: 'completado',
-    es_recurrente: true,
-  },
-  {
-    id: 'm5',
-    user_id: 'user1',
-    cuenta_id: 'c2',
-    categoria_id: 'cat2',
-    tipo: 'gasto',
-    monto: 60000,
-    moneda: 'COP',
-    fecha: new Date().toISOString().slice(0, 10),
-    descripcion: 'Gasolina / Transporte',
-    estado: 'completado',
-    es_recurrente: false,
-  },
-  {
-    id: 'm6',
-    user_id: 'user1',
-    cuenta_id: 'c5',
-    categoria_id: 'cat7',
-    tipo: 'ingreso',
-    monto: 450.00,
-    moneda: 'USD',
-    fecha: new Date().toISOString().slice(0, 10),
-    descripcion: 'Cobro Trabajo Freelance en Dólares',
-    estado: 'completado',
-    es_recurrente: false,
-  },
-  {
-    id: 'm7',
-    user_id: 'user1',
-    cuenta_id: 'c1',
-    categoria_id: 'cat3',
-    tipo: 'gasto',
-    monto: 120000,
-    moneda: 'COP',
-    fecha: new Date().toISOString().slice(0, 10),
-    descripcion: 'Factura Internet Fibra Óptica',
-    estado: 'pendiente',
-    es_recurrente: true,
-  },
-];
+const DEFAULT_MOVIMIENTOS: Movimiento[] = [];
 
-const DEFAULT_PRESUPUESTOS: Presupuesto[] = [
-  { id: 'p1', user_id: 'user1', categoria_id: 'cat1', monto_limite: 1200000, moneda: 'COP', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), gasto_actual: 380000 },
-  { id: 'p2', user_id: 'user1', categoria_id: 'cat2', monto_limite: 350000, moneda: 'COP', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), gasto_actual: 60000 },
-  { id: 'p3', user_id: 'user1', categoria_id: 'cat4', monto_limite: 200000, moneda: 'COP', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), gasto_actual: 48900 },
-  { id: 'p4', user_id: 'user1', categoria_id: 'cat3', monto_limite: 250000, moneda: 'COP', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), gasto_actual: 165000 },
-];
+const DEFAULT_PRESUPUESTOS: Presupuesto[] = [];
 
-const DEFAULT_METAS_AHORRO: MetaAhorro[] = [
-  {
-    id: 'meta1',
-    user_id: 'user1',
-    nombre: 'Viaje a San Andrés / Vacaciones',
-    monto_objetivo: 4000000,
-    monto_actual: 2800000,
-    moneda: 'COP',
-    fecha_limite: '2026-12-15',
-    color: '#06B6D4',
-    icono: 'Plane',
-  },
-  {
-    id: 'meta2',
-    user_id: 'user1',
-    nombre: 'Fondo de Emergencia (6 meses)',
-    monto_objetivo: 10000000,
-    monto_actual: 6200000,
-    moneda: 'COP',
-    fecha_limite: '2027-06-30',
-    color: '#10B981',
-    icono: 'ShieldCheck',
-  },
-  {
-    id: 'meta3',
-    user_id: 'user1',
-    nombre: 'Nuevo Equipo / Laptop Pro',
-    monto_objetivo: 1200,
-    monto_actual: 750,
-    moneda: 'USD',
-    fecha_limite: '2026-11-30',
-    color: '#8B5CF6',
-    icono: 'Laptop',
-  },
-];
+const DEFAULT_METAS_AHORRO: MetaAhorro[] = [];
 
 interface FinanceState {
   cuentas: Cuenta[];
@@ -226,6 +116,7 @@ interface FinanceState {
   
   cargarDatos: () => Promise<void>;
   agregarMovimiento: (movimiento: Omit<Movimiento, 'id' | 'created_at'>) => Promise<void>;
+  importarMovimientos: (movimientos: Omit<Movimiento, 'id' | 'created_at'>[], opciones?: { actualizarSaldos?: boolean }) => Promise<void>;
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
   agregarCuenta: (cuenta: Omit<Cuenta, 'id' | 'created_at' | 'saldo_actual'>) => Promise<void>;
@@ -277,16 +168,16 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   metasAhorro: savedLocalData?.metasAhorro || DEFAULT_METAS_AHORRO,
   isLoading: false,
   resumenCOP: {
-    total_ingresos: 4500000,
-    total_gastos: 653900,
-    balance: 3846100,
-    gastos_pendientes: 120000,
+    total_ingresos: 0,
+    total_gastos: 0,
+    balance: 0,
+    gastos_pendientes: 0,
   },
   resumenUSD: {
-    total_ingresos: 450.00,
-    total_gastos: 0.00,
-    balance: 450.00,
-    gastos_pendientes: 0.00,
+    total_ingresos: 0,
+    total_gastos: 0,
+    balance: 0,
+    gastos_pendientes: 0,
   },
 
   calcularResumenes: () => {
@@ -426,6 +317,95 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     } catch (e) {
       console.warn('Registro local guardado');
     }
+  },
+
+  importarMovimientos: async (nuevos, opciones) => {
+    if (nuevos.length === 0) return;
+
+    const actualizarSaldos = opciones?.actualizarSaldos ?? false;
+    const { data: { session } } = await supabase.auth.getSession();
+    let importados: Movimiento[];
+
+    if (session) {
+      const cuentaIds = [...new Set(nuevos.map((movimiento) => movimiento.cuenta_id))];
+      let saldosAnteriores: { id: string; saldo_actual: number }[] = [];
+      if (!actualizarSaldos) {
+        const { data, error } = await supabase
+          .from('cuentas')
+          .select('id, saldo_actual')
+          .eq('user_id', session.user.id)
+          .in('id', cuentaIds);
+        if (error || !data) throw error || new Error('No se pudieron leer los saldos actuales.');
+        saldosAnteriores = data;
+      }
+
+      const { data, error } = await supabase
+        .from('movimientos')
+        .insert(nuevos.map((movimiento) => ({ ...movimiento, user_id: session.user.id })))
+        .select();
+
+      if (error || !data) throw error || new Error('No se pudo guardar la importación.');
+      importados = data as Movimiento[];
+
+      if (actualizarSaldos) {
+        const transferenciasPorCuenta = new Map<string, number>();
+        importados.forEach((movimiento) => {
+          if (movimiento.tipo !== 'transferencia') return;
+          const delta = movimiento.notas?.includes('[flujo:salida]')
+            ? -movimiento.monto
+            : movimiento.notas?.includes('[flujo:entrada]') ? movimiento.monto : 0;
+          transferenciasPorCuenta.set(movimiento.cuenta_id, (transferenciasPorCuenta.get(movimiento.cuenta_id) || 0) + delta);
+        });
+
+        for (const [cuentaId, delta] of transferenciasPorCuenta) {
+          if (!delta) continue;
+          const { data: cuentaActual, error: readError } = await supabase
+            .from('cuentas')
+            .select('saldo_actual')
+            .eq('id', cuentaId)
+            .single();
+          if (readError || !cuentaActual) throw readError || new Error('No se pudo actualizar el saldo de la cuenta.');
+          const { error: updateError } = await supabase
+            .from('cuentas')
+            .update({ saldo_actual: Number(cuentaActual.saldo_actual) + delta })
+            .eq('id', cuentaId);
+          if (updateError) throw updateError;
+        }
+      } else {
+        for (const cuenta of saldosAnteriores) {
+          const { error: updateError } = await supabase
+            .from('cuentas')
+            .update({ saldo_actual: cuenta.saldo_actual })
+            .eq('id', cuenta.id);
+          if (updateError) throw updateError;
+        }
+      }
+    } else {
+      importados = nuevos.map((movimiento, index) => ({
+        ...movimiento,
+        id: `import_${Date.now()}_${index}`,
+      }));
+    }
+
+    set((state) => ({
+      movimientos: [...importados, ...state.movimientos],
+      cuentas: state.cuentas.map((cuenta) => {
+        if (!actualizarSaldos) return cuenta;
+        const saldoDelta = importados.reduce((delta, movimiento) => {
+          if (movimiento.cuenta_id !== cuenta.id || movimiento.estado !== 'completado') return delta;
+          if (movimiento.tipo === 'ingreso') return delta + movimiento.monto;
+          if (movimiento.tipo === 'gasto') return delta - movimiento.monto;
+          if (movimiento.tipo === 'transferencia') {
+            if (movimiento.notas?.includes('[flujo:salida]')) return delta - movimiento.monto;
+            if (movimiento.notas?.includes('[flujo:entrada]')) return delta + movimiento.monto;
+          }
+          return delta;
+        }, 0);
+        return saldoDelta ? { ...cuenta, saldo_actual: cuenta.saldo_actual + saldoDelta } : cuenta;
+      }),
+    }));
+    get().calcularResumenes();
+    persistLocally(get());
   },
 
   editarMovimiento: async (id, updated) => {

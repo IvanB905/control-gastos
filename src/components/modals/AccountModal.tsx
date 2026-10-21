@@ -27,26 +27,39 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
   const [moneda, setMoneda] = useState<TipoMoneda>('COP');
   const [saldoInicial, setSaldoInicial] = useState('');
   const [color, setColor] = useState(COLOR_PRESETS[0].value);
+  const [limiteCredito, setLimiteCredito] = useState('');
+  const [ingresoMensual, setIngresoMensual] = useState('');
+  const [aporteMensual, setAporteMensual] = useState('');
+  const [plazoMeses, setPlazoMeses] = useState('');
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const monto = parseFloat(saldoInicial) || 0;
+    const esDeuda = tipo === 'tarjeta_credito' || tipo === 'credito_libre_inversion';
 
     agregarCuenta({
       user_id: 'user1',
       nombre,
       tipo,
       moneda,
-      saldo_inicial: monto,
+      saldo_inicial: esDeuda ? -Math.abs(monto) : monto,
       color,
-      icono: tipo === 'banco' ? 'Landmark' : tipo === 'nequi_daviplata' ? 'Smartphone' : 'Banknote',
+      icono: tipo === 'banco' ? 'Landmark' : tipo === 'nequi_daviplata' ? 'Smartphone' : tipo === 'credito_libre_inversion' || tipo === 'tarjeta_credito' ? 'CreditCard' : 'Banknote',
       es_predeterminada: false,
+      ...(tipo === 'tarjeta_credito' && limiteCredito ? { limite_credito: Number(limiteCredito) } : {}),
+      ...(tipo === 'banco' && ingresoMensual ? { ingreso_mensual_estimado: Number(ingresoMensual) } : {}),
+      ...(tipo === 'ahorro' && aporteMensual ? { aporte_mensual: Number(aporteMensual) } : {}),
+      ...(tipo === 'credito_libre_inversion' && plazoMeses ? { plazo_meses: Number(plazoMeses) } : {}),
     });
 
     setNombre('');
     setSaldoInicial('');
+    setLimiteCredito('');
+    setIngresoMensual('');
+    setAporteMensual('');
+    setPlazoMeses('');
     onClose();
   };
 
@@ -98,6 +111,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
                 <option value="nequi_daviplata">Billetera (Nequi/Daviplata)</option>
                 <option value="efectivo">Efectivo Físico</option>
                 <option value="tarjeta_credito">Tarjeta de Crédito</option>
+                <option value="credito_libre_inversion">Crédito libre inversión</option>
                 <option value="ahorro">Fondo de Ahorro</option>
               </select>
             </div>
@@ -117,10 +131,38 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
             </div>
           </div>
 
+          {(tipo === 'tarjeta_credito' || tipo === 'credito_libre_inversion') && (
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">{tipo === 'tarjeta_credito' ? `Cupo total (${moneda})` : 'Plazo del crédito (meses)'}</label>
+              <input
+                type="number"
+                min="1"
+                step={tipo === 'tarjeta_credito' ? (moneda === 'COP' ? '1' : '0.01') : '1'}
+                value={tipo === 'tarjeta_credito' ? limiteCredito : plazoMeses}
+                onChange={(event) => tipo === 'tarjeta_credito' ? setLimiteCredito(event.target.value) : setPlazoMeses(event.target.value)}
+                className="w-full px-3.5 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+          )}
+
+          {tipo === 'banco' && (
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">Ingreso mensual estimado ({moneda})</label>
+              <input type="number" min="0" step={moneda === 'COP' ? '1' : '0.01'} value={ingresoMensual} onChange={(event) => setIngresoMensual(event.target.value)} className="w-full px-3.5 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+          )}
+
+          {tipo === 'ahorro' && (
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">Aporte mensual planeado ({moneda})</label>
+              <input type="number" min="0" step={moneda === 'COP' ? '1' : '0.01'} value={aporteMensual} onChange={(event) => setAporteMensual(event.target.value)} className="w-full px-3.5 py-2 text-xs rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/80 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+          )}
+
           {/* Saldo Inicial */}
           <div className="space-y-1">
             <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
-              Saldo Inicial ({moneda})
+              {tipo === 'tarjeta_credito' || tipo === 'credito_libre_inversion' ? `Deuda actual (${moneda})` : `Saldo actual (${moneda})`}
             </label>
             <div className="relative">
               <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-400">
@@ -128,6 +170,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
               </span>
               <input
                 type="number"
+                min="0"
                 step={moneda === 'COP' ? '1' : '0.01'}
                 placeholder="0"
                 value={saldoInicial}

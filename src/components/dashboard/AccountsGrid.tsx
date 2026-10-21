@@ -22,6 +22,7 @@ const getAccountIcon = (tipo: TipoCuenta) => {
     case 'efectivo':
       return Banknote;
     case 'tarjeta_credito':
+    case 'credito_libre_inversion':
       return CreditCard;
     case 'ahorro':
       return ShieldCheck;
@@ -35,7 +36,7 @@ export const AccountsGrid: React.FC = () => {
   const { moneda } = useAppStore();
 
   const totalCuentas = cuentas
-    .filter((c) => c.moneda === moneda)
+    .filter((c) => c.moneda === moneda && c.tipo !== 'tarjeta_credito' && c.tipo !== 'credito_libre_inversion')
     .reduce((acc, c) => acc + c.saldo_actual, 0);
 
   return (
@@ -76,7 +77,7 @@ export const AccountsGrid: React.FC = () => {
               <div className="mt-2.5 sm:mt-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-wider text-zinc-400 block truncate">
-                    {cuenta.tipo.replace('_', ' ')}
+                    {cuenta.tipo === 'credito_libre_inversion' ? 'crédito libre inversión' : cuenta.tipo.replace('_', ' ')}
                   </span>
                   <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
                     {cuenta.moneda}

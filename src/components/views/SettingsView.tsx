@@ -83,7 +83,7 @@ export const SettingsView: React.FC = () => {
   };
 
   const handleResetDemoData = () => {
-    if (confirm('¿Deseas restablecer los datos al estado inicial de demostración? Esto limpiará los datos guardados localmente.')) {
+    if (confirm('¿Deseas restablecer la configuración inicial de tus cuentas? Esto borrará movimientos, presupuestos, metas y otros datos guardados localmente.')) {
       restablecerDatosDemo();
       setStatusMessage('Datos restablecidos al estado inicial correctamente.');
       setTimeout(() => setStatusMessage(null), 3500);
@@ -390,7 +390,7 @@ export const SettingsView: React.FC = () => {
             </div>
 
             <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-              Exporta una copia completa en JSON o restablece los datos demo para pruebas.
+              Exporta una copia completa en JSON o restablece la configuración inicial de tus cuentas.
             </p>
 
             <div className="space-y-2.5">

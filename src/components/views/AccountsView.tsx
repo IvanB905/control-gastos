@@ -26,6 +26,7 @@ const getAccountIcon = (tipo: TipoCuenta) => {
     case 'efectivo':
       return Banknote;
     case 'tarjeta_credito':
+    case 'credito_libre_inversion':
       return CreditCard;
     case 'ahorro':
       return ShieldCheck;
@@ -43,15 +44,15 @@ export const AccountsView: React.FC = () => {
 
   // Cálculos consolidados
   const totalCOP = cuentas
-    .filter((c) => c.moneda === 'COP' && c.tipo !== 'tarjeta_credito')
+    .filter((c) => c.moneda === 'COP' && c.tipo !== 'tarjeta_credito' && c.tipo !== 'credito_libre_inversion')
     .reduce((acc, c) => acc + c.saldo_actual, 0);
 
   const totalUSD = cuentas
-    .filter((c) => c.moneda === 'USD')
+    .filter((c) => c.moneda === 'USD' && c.tipo !== 'tarjeta_credito' && c.tipo !== 'credito_libre_inversion')
     .reduce((acc, c) => acc + c.saldo_actual, 0);
 
-  const deudaTarjetas = cuentas
-    .filter((c) => c.tipo === 'tarjeta_credito')
+  const deudaTotal = cuentas
+    .filter((c) => c.tipo === 'tarjeta_credito' || c.tipo === 'credito_libre_inversion')
     .reduce((acc, c) => acc + Math.abs(c.saldo_actual), 0);
 
   const movimientosCuenta = selectedCuentaId
@@ -114,10 +115,10 @@ export const AccountsView: React.FC = () => {
 
         <div className="col-span-2 sm:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
           <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
-            Deuda en Tarjetas
+            Deuda Total (COP)
           </span>
           <span className="text-base sm:text-xl font-bold text-rose-600 dark:text-rose-400 block mt-1 truncate">
-            {formatCurrency(deudaTarjetas, 'COP')}
+            {formatCurrency(deudaTotal, 'COP')}
           </span>
         </div>
       </div>
@@ -153,7 +154,7 @@ export const AccountsView: React.FC = () => {
                       {cuenta.nombre}
                     </h4>
                     <span className="text-[11px] text-zinc-400 font-medium capitalize">
-                      {cuenta.tipo.replace('_', ' ')}
+                      {cuenta.tipo === 'credito_libre_inversion' ? 'crédito libre inversión' : cuenta.tipo.replace('_', ' ')}
                     </span>
                   </div>
                 </div>
@@ -193,6 +194,16 @@ export const AccountsView: React.FC = () => {
                   {isSelected ? 'Ocultar historial' : 'Ver movimientos →'}
                 </span>
               </div>
+
+              {(cuenta.limite_credito || cuenta.ingreso_mensual_estimado || cuenta.aporte_mensual || cuenta.plazo_meses || cuenta.saldo_fecha) && (
+                <div className="mt-4 space-y-1 border-t border-zinc-100 pt-3 text-[11px] text-zinc-500 dark:border-zinc-800">
+                  {cuenta.limite_credito && <p>Cupo: {formatCurrency(cuenta.limite_credito, cuenta.moneda)} · Disponible: {formatCurrency(Math.max(0, cuenta.limite_credito - Math.abs(cuenta.saldo_actual)), cuenta.moneda)}</p>}
+                  {cuenta.ingreso_mensual_estimado && <p>Nómina mensual estimada: {formatCurrency(cuenta.ingreso_mensual_estimado, cuenta.moneda)}</p>}
+                  {cuenta.aporte_mensual && <p>Aporte mensual: {formatCurrency(cuenta.aporte_mensual, cuenta.moneda)}</p>}
+                  {cuenta.plazo_meses && <p>Plazo: {cuenta.plazo_meses} meses</p>}
+                  {cuenta.saldo_fecha && <p>Saldo de referencia: {formatDate(cuenta.saldo_fecha)}</p>}
+                </div>
+              )}
             </div>
           );
         })}
