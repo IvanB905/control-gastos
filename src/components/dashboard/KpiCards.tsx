@@ -5,15 +5,25 @@ import { useAppStore } from '../../store/useAppStore';
 import { formatCurrency } from '../../lib/utils';
 
 export const KpiCards: React.FC = () => {
-  const { resumenCOP, resumenUSD } = useFinanceStore();
-  const { moneda } = useAppStore();
+  const { movimientos } = useFinanceStore();
+  const { moneda, selectedMonth, selectedYear } = useAppStore();
 
-  const resumen = moneda === 'COP' ? resumenCOP : resumenUSD;
+  const resumen = movimientos.reduce((totals, movimiento) => {
+    const [year, month] = movimiento.fecha.split('-').map(Number);
+    if (year !== selectedYear || month !== selectedMonth || movimiento.moneda !== moneda || movimiento.tipo === 'transferencia') {
+      return totals;
+    }
+    if (movimiento.tipo === 'ingreso' && movimiento.estado === 'completado') totals.total_ingresos += movimiento.monto;
+    if (movimiento.tipo === 'gasto' && movimiento.estado === 'completado') totals.total_gastos += movimiento.monto;
+    if (movimiento.tipo === 'gasto' && movimiento.estado === 'pendiente') totals.gastos_pendientes += movimiento.monto;
+    return totals;
+  }, { total_ingresos: 0, total_gastos: 0, gastos_pendientes: 0 });
+  const balance = resumen.total_ingresos - resumen.total_gastos;
 
   const cards = [
     {
       title: 'Balance Neto',
-      amount: resumen.balance,
+      amount: balance,
       subtitle: `Ingresos vs Gastos (${moneda})`,
       icon: TrendingUp,
       color: 'text-indigo-600 dark:text-indigo-400',

@@ -25,15 +25,17 @@ export const BudgetsView: React.FC = () => {
     abonarAMetaAhorro, 
     eliminarMetaAhorro 
   } = useFinanceStore();
-  const { moneda } = useAppStore();
+  const { moneda, selectedMonth, selectedYear } = useAppStore();
 
   const [isBudgetModalOpen, setBudgetModalOpen] = useState(false);
   const [isGoalModalOpen, setGoalModalOpen] = useState(false);
   const [abonoMetaId, setAbonoMetaId] = useState<string | null>(null);
   const [montoAbono, setMontoAbono] = useState('');
 
-  // Filtrar presupuestos de la moneda activa
-  const presupuestosFiltrados = presupuestos.filter((p) => p.moneda === moneda);
+  // Filtrar presupuestos para la moneda y el periodo seleccionados.
+  const presupuestosFiltrados = presupuestos.filter(
+    (p) => p.moneda === moneda && p.mes === selectedMonth && p.anio === selectedYear,
+  );
   const metasFiltradas = metasAhorro.filter((m) => m.moneda === moneda);
 
   // Cálculos de presupuestos

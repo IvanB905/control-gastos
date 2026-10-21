@@ -25,39 +25,37 @@ ChartJS.register(
 
 export const IncomeExpenseBarChart: React.FC = () => {
   const { movimientos } = useFinanceStore();
-  const { moneda, theme } = useAppStore();
+  const { moneda, theme, selectedMonth, selectedYear } = useAppStore();
 
-  const currentMonth = new Date().getMonth();
-  
-  // Generar etiquetas de los últimos 4 meses
-  const labels = [
-    MESES[(currentMonth - 3 + 12) % 12],
-    MESES[(currentMonth - 2 + 12) % 12],
-    MESES[(currentMonth - 1 + 12) % 12],
-    MESES[currentMonth],
-  ];
-
-  // Calcular ingresos y gastos por mes simulados / reales
+  const periodos = Array.from({ length: 4 }, (_, index) => {
+    const date = new Date(selectedYear, selectedMonth - 1 - (3 - index), 1);
+    return { mes: date.getMonth() + 1, anio: date.getFullYear(), etiqueta: `${MESES[date.getMonth()].slice(0, 3)} ${date.getFullYear()}` };
+  });
   const isCOP = moneda === 'COP';
-  const factor = isCOP ? 1000 : 1;
+  const totalesPorMes = periodos.map(({ mes, anio }) => movimientos.reduce(
+    (totals, movimiento) => {
+      const [year, month] = movimiento.fecha.split('-').map(Number);
+      if (year !== anio || month !== mes || movimiento.moneda !== moneda || movimiento.estado !== 'completado') return totals;
+      if (movimiento.tipo === 'ingreso') totals.ingresos += movimiento.monto;
+      if (movimiento.tipo === 'gasto') totals.gastos += movimiento.monto;
+      return totals;
+    },
+    { ingresos: 0, gastos: 0 },
+  ));
 
   const data = {
-    labels,
+    labels: periodos.map(({ etiqueta }) => etiqueta),
     datasets: [
       {
         label: 'Ingresos',
-        data: isCOP 
-          ? [3800000, 4200000, 3900000, 4500000] 
-          : [1200, 1400, 1100, 1450],
+        data: totalesPorMes.map(({ ingresos }) => ingresos),
         backgroundColor: '#10B981',
         borderRadius: 8,
         borderSkipped: false,
       },
       {
         label: 'Gastos',
-        data: isCOP 
-          ? [1200000, 1850000, 1400000, 653900] 
-          : [450, 620, 510, 280],
+        data: totalesPorMes.map(({ gastos }) => gastos),
         backgroundColor: '#F43F5E',
         borderRadius: 8,
         borderSkipped: false,

@@ -223,10 +223,6 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     let usd_gastos = 0;
     let usd_pendientes = 0;
 
-    // Calcular gasto actual por categoría en presupuestos
-    const gastoPorCategoriaCOP: { [catId: string]: number } = {};
-    const gastoPorCategoriaUSD: { [catId: string]: number } = {};
-
     movimientos.forEach((m) => {
       if (m.tipo === 'transferencia') return;
 
@@ -240,14 +236,8 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         if (m.tipo === 'gasto') {
           if (isCOP) {
             cop_gastos += m.monto;
-            if (m.categoria_id) {
-              gastoPorCategoriaCOP[m.categoria_id] = (gastoPorCategoriaCOP[m.categoria_id] || 0) + m.monto;
-            }
           } else {
             usd_gastos += m.monto;
-            if (m.categoria_id) {
-              gastoPorCategoriaUSD[m.categoria_id] = (gastoPorCategoriaUSD[m.categoria_id] || 0) + m.monto;
-            }
           }
         }
       } else if (m.estado === 'pendiente' && m.tipo === 'gasto') {
@@ -256,11 +246,20 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       }
     });
 
-    // Actualizar presupuestos con el gasto real calculado
+    // Cada presupuesto suma solo los gastos del mes y año que le corresponden.
     const presupuestosActualizados = presupuestos.map((p) => {
-      const gasto = p.moneda === 'COP' 
-        ? gastoPorCategoriaCOP[p.categoria_id] || 0 
-        : gastoPorCategoriaUSD[p.categoria_id] || 0;
+      const gasto = movimientos.reduce((total, movimiento) => {
+        const [year, month] = movimiento.fecha.split('-').map(Number);
+        if (
+          movimiento.tipo === 'gasto'
+          && movimiento.estado === 'completado'
+          && movimiento.categoria_id === p.categoria_id
+          && movimiento.moneda === p.moneda
+          && month === p.mes
+          && year === p.anio
+        ) return total + movimiento.monto;
+        return total;
+      }, 0);
       return { ...p, gasto_actual: gasto };
     });
 

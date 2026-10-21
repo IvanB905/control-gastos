@@ -15,11 +15,18 @@ const PALETTE = [
 
 export const CategoryDonutChart: React.FC = () => {
   const { movimientos, categorias } = useFinanceStore();
-  const { moneda, theme } = useAppStore();
+  const { moneda, theme, selectedMonth, selectedYear } = useAppStore();
 
-  // Filtrar gastos completados de la moneda activa
+  // Mostrar únicamente gastos completados del periodo seleccionado.
   const gastos = movimientos.filter(
-    (m) => m.tipo === 'gasto' && m.estado === 'completado' && m.moneda === moneda
+    (m) => {
+      const [year, month] = m.fecha.split('-').map(Number);
+      return m.tipo === 'gasto'
+        && m.estado === 'completado'
+        && m.moneda === moneda
+        && month === selectedMonth
+        && year === selectedYear;
+    }
   );
 
   // Agrupar por categoría

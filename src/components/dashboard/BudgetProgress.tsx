@@ -6,9 +6,11 @@ import { formatCurrency } from '../../lib/utils';
 
 export const BudgetProgress: React.FC = () => {
   const { presupuestos, categorias } = useFinanceStore();
-  const { moneda } = useAppStore();
+  const { moneda, selectedMonth, selectedYear } = useAppStore();
 
-  const presupuestosFiltrados = presupuestos.filter((p) => p.moneda === moneda);
+  const presupuestosFiltrados = presupuestos.filter(
+    (p) => p.moneda === moneda && p.mes === selectedMonth && p.anio === selectedYear,
+  );
 
   return (
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-6 shadow-xs">
