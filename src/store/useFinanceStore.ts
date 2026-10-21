@@ -111,6 +111,7 @@ interface FinanceState {
   presupuestos: Presupuesto[];
   metasAhorro: MetaAhorro[];
   isLoading: boolean;
+  syncError: string | null;
   resumenCOP: ResumenMensual;
   resumenUSD: ResumenMensual;
   
@@ -399,6 +400,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   presupuestos: savedLocalData?.presupuestos || DEFAULT_PRESUPUESTOS,
   metasAhorro: savedLocalData?.metasAhorro || DEFAULT_METAS_AHORRO,
   isLoading: false,
+  syncError: null,
   resumenCOP: {
     total_ingresos: 0,
     total_gastos: 0,
@@ -481,7 +483,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   cargarDatos: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, syncError: null });
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -513,7 +515,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
           movimientos: local.movimientos,
           presupuestos: local.presupuestos,
         });
-        set({ ...synced });
+        set({ ...synced, syncError: null });
         get().calcularResumenes();
         persistLocally(get());
         set({ isLoading: false });
@@ -527,23 +529,21 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         supabase.from('presupuestos').select('*').eq('user_id', userId),
       ]);
 
-      if (resCuentas.data && resCuentas.data.length > 0) {
-        set({ cuentas: resCuentas.data });
-      }
-      if (resCategorias.data && resCategorias.data.length > 0) {
-        set({ categorias: resCategorias.data });
-      }
-      if (resMovimientos.data && resMovimientos.data.length > 0) {
-        set({ movimientos: dedupeImportedMovements(resMovimientos.data as Movimiento[]) });
-      }
-      if (resPresupuestos.data && resPresupuestos.data.length > 0) {
-        set({ presupuestos: resPresupuestos.data });
-      }
+      const queryError = [resCuentas.error, resCategorias.error, resMovimientos.error, resPresupuestos.error].find(Boolean);
+      if (queryError) throw queryError;
+      set({
+        cuentas: resCuentas.data || [],
+        categorias: resCategorias.data || [],
+        movimientos: dedupeImportedMovements((resMovimientos.data || []) as Movimiento[]),
+        presupuestos: resPresupuestos.data || [],
+        syncError: null,
+      });
 
       get().calcularResumenes();
     } catch (error) {
       const detail = error instanceof Error ? error.message : JSON.stringify(error);
       console.error('Error al cargar datos desde Supabase:', detail);
+      set({ syncError: 'No se pudieron sincronizar tus datos con tu cuenta. Revisa la configuración de Supabase y vuelve a intentar.' });
     } finally {
       set({ isLoading: false });
     }
@@ -729,14 +729,16 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        await supabase.from('cuentas').insert([{
+        const { error } = await supabase.from('cuentas').insert([{
           ...cuenta,
           saldo_actual: cuenta.saldo_inicial,
           user_id: session.user.id,
         }]);
+        if (error) throw error;
       }
     } catch (e) {
       console.warn('Cuenta guardada localmente');
+      set({ syncError: 'La cuenta quedó en este navegador, pero no se guardó en la nube. Usa Reintentar sincronización.' });
     }
   },
 

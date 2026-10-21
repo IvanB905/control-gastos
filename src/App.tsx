@@ -19,7 +19,7 @@ import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 
 export function App() {
-  const { cargarDatos } = useFinanceStore();
+  const { cargarDatos, syncError, isLoading: isFinanceLoading } = useFinanceStore();
   const { activeTab, theme } = useAppStore();
   const { initAuth, user, isLoading: isAuthLoading, setAuthModalOpen } = useAuthStore();
 
@@ -80,6 +80,19 @@ export function App() {
         <Header />
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 md:space-y-7 pb-24 md:pb-8">
+          {syncError && (
+            <section role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+              <p>{syncError}</p>
+              <button
+                type="button"
+                onClick={() => void cargarDatos()}
+                disabled={isFinanceLoading}
+                className="shrink-0 rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50 dark:bg-amber-600 dark:hover:bg-amber-500"
+              >
+                {isFinanceLoading ? 'Sincronizando…' : 'Reintentar sincronización'}
+              </button>
+            </section>
+          )}
           {activeTab === 'dashboard' && (
             <>
               {/* Top KPI Metric Cards */}
