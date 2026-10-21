@@ -299,6 +299,17 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
     cloudBudgets.push(...((result.data || []) as Presupuesto[]));
   }
 
+  // The database movement trigger recalculates balances while inserting history.
+  // Restore each account's chosen snapshot after the historical rows are merged.
+  for (const accountId of accountIds.values()) {
+    const target = cloudAccounts.find((account) => account.id === accountId);
+    if (!target) continue;
+    const { error } = await supabase.from('cuentas')
+      .update({ saldo_actual: target.saldo_actual, saldo_fecha: target.saldo_fecha || null })
+      .eq('id', accountId).eq('user_id', userId);
+    if (error) throw error;
+  }
+
   return { cuentas: cloudAccounts, categorias: cloudCategories, movimientos: cloudMovements, presupuestos: cloudBudgets };
 };
 
@@ -461,7 +472,8 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
 
       get().calcularResumenes();
     } catch (error) {
-      console.error('Error al cargar datos desde Supabase:', error);
+      const detail = error instanceof Error ? error.message : JSON.stringify(error);
+      console.error('Error al cargar datos desde Supabase:', detail);
     } finally {
       set({ isLoading: false });
     }
