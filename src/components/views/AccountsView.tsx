@@ -9,12 +9,14 @@ import {
   CreditCard, 
   ShieldCheck, 
   Wallet,
-  DollarSign
+  DollarSign,
+  PencilLine,
 } from 'lucide-react';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { formatCurrency, formatDate } from '../../lib/utils';
 import { AccountModal } from '../modals/AccountModal';
 import { TransferModal } from '../modals/TransferModal';
+import { UpdateAccountBalanceModal } from '../modals/UpdateAccountBalanceModal';
 import type { TipoCuenta } from '../../types';
 
 const getAccountIcon = (tipo: TipoCuenta) => {
@@ -41,6 +43,7 @@ export const AccountsView: React.FC = () => {
   const [isAccountModalOpen, setAccountModalOpen] = useState(false);
   const [isTransferModalOpen, setTransferModalOpen] = useState(false);
   const [selectedCuentaId, setSelectedCuentaId] = useState<string | null>(null);
+  const [cuentaParaActualizar, setCuentaParaActualizar] = useState<typeof cuentas[number] | null>(null);
 
   // Cálculos consolidados
   const totalCOP = cuentas
@@ -160,6 +163,15 @@ export const AccountsView: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(event) => { event.stopPropagation(); setCuentaParaActualizar(cuenta); }}
+                    aria-label={`Actualizar saldo de ${cuenta.nombre}`}
+                    title="Actualizar saldo"
+                    className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-emerald-600 dark:hover:bg-zinc-800"
+                  >
+                    <PencilLine className="h-3.5 w-3.5" />
+                  </button>
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
                     {cuenta.moneda}
                   </span>
@@ -254,6 +266,12 @@ export const AccountsView: React.FC = () => {
         isOpen={isTransferModalOpen}
         onClose={() => setTransferModalOpen(false)}
       />
+      {cuentaParaActualizar && (
+        <UpdateAccountBalanceModal
+          cuenta={cuentaParaActualizar}
+          onClose={() => setCuentaParaActualizar(null)}
+        />
+      )}
     </div>
   );
 };

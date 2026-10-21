@@ -1,0 +1,65 @@
+import React, { useState } from 'react';
+import { X } from 'lucide-react';
+import { useFinanceStore } from '../../store/useFinanceStore';
+import type { Cuenta } from '../../types';
+
+interface UpdateAccountBalanceModalProps {
+  cuenta: Cuenta | null;
+  onClose: () => void;
+}
+
+export const UpdateAccountBalanceModal: React.FC<UpdateAccountBalanceModalProps> = ({ cuenta, onClose }) => {
+  const actualizarSaldoCuenta = useFinanceStore((state) => state.actualizarSaldoCuenta);
+  const [saldo, setSaldo] = useState(cuenta?.saldo_actual.toString() ?? '');
+  const [fecha, setFecha] = useState(cuenta?.saldo_fecha ?? new Date().toISOString().slice(0, 10));
+  const [error, setError] = useState('');
+
+  if (!cuenta) return null;
+
+  const guardar = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const valor = Number(saldo);
+    if (!Number.isFinite(valor) || !fecha) {
+      setError('Ingresa un saldo y una fecha válidos.');
+      return;
+    }
+    try {
+      await actualizarSaldoCuenta(cuenta.id, valor, fecha);
+      onClose();
+    } catch {
+      setError('No se pudo guardar el saldo. Intenta de nuevo.');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4" role="dialog" aria-modal="true" aria-labelledby="balance-modal-title">
+      <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="balance-modal-title" className="text-base font-bold text-zinc-900 dark:text-white">Actualizar saldo</h2>
+            <p className="mt-1 text-xs text-zinc-500">{cuenta.nombre}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="h-4 w-4" /></button>
+        </div>
+        <p className="mt-4 rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          Este valor reemplaza el saldo de la cuenta y su fecha de referencia. No crea un ingreso, gasto ni movimiento.
+        </p>
+        <form onSubmit={guardar} className="mt-4 space-y-4">
+          <div className="space-y-1">
+            <label htmlFor="account-balance" className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Saldo actual ({cuenta.moneda})</label>
+            <input id="account-balance" type="number" step="0.01" required value={saldo} onChange={(event) => setSaldo(event.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white" />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="account-balance-date" className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Saldo correspondiente al</label>
+            <input id="account-balance-date" type="date" required value={fecha} onChange={(event) => setFecha(event.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white" />
+          </div>
+          {error && <p role="alert" className="text-xs text-rose-600">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">Cancelar</button>
+            <button type="submit" className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500">Guardar saldo</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};

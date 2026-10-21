@@ -120,6 +120,7 @@ interface FinanceState {
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
   agregarCuenta: (cuenta: Omit<Cuenta, 'id' | 'created_at' | 'saldo_actual'>) => Promise<void>;
+  actualizarSaldoCuenta: (id: string, saldoActual: number, saldoFecha: string) => Promise<void>;
   eliminarCuenta: (id: string) => Promise<void>;
   realizarTransferencia: (origenId: string, destinoId: string, monto: number, descripcion: string, fecha: string) => Promise<void>;
   agregarPresupuesto: (presupuesto: Omit<Presupuesto, 'id'>) => Promise<void>;
@@ -509,6 +510,25 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     } catch (e) {
       console.warn('Cuenta guardada localmente');
     }
+  },
+
+  actualizarSaldoCuenta: async (id, saldoActual, saldoFecha) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const { error } = await supabase
+        .from('cuentas')
+        .update({ saldo_actual: saldoActual, saldo_fecha: saldoFecha })
+        .eq('id', id)
+        .eq('user_id', session.user.id);
+      if (error) throw error;
+    }
+
+    set((state) => ({
+      cuentas: state.cuentas.map((cuenta) => cuenta.id === id
+        ? { ...cuenta, saldo_actual: saldoActual, saldo_fecha: saldoFecha }
+        : cuenta),
+    }));
+    persistLocally(get());
   },
 
   eliminarCuenta: async (id) => {
