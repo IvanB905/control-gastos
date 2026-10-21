@@ -354,6 +354,14 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     if (nuevos.length === 0) return;
 
     const actualizarSaldos = opciones?.actualizarSaldos ?? false;
+    const fechaUltimaPorCuenta = new Map<string, string>();
+    if (actualizarSaldos) {
+      nuevos.forEach((movimiento) => {
+        if (movimiento.estado !== 'completado') return;
+        const fechaActual = fechaUltimaPorCuenta.get(movimiento.cuenta_id) || '';
+        if (movimiento.fecha > fechaActual) fechaUltimaPorCuenta.set(movimiento.cuenta_id, movimiento.fecha);
+      });
+    }
     const { data: { session } } = await supabase.auth.getSession();
     let importados: Movimiento[];
 
@@ -398,7 +406,10 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
           if (readError || !cuentaActual) throw readError || new Error('No se pudo actualizar el saldo de la cuenta.');
           const { error: updateError } = await supabase
             .from('cuentas')
-            .update({ saldo_actual: Number(cuentaActual.saldo_actual) + delta })
+            .update({
+              saldo_actual: Number(cuentaActual.saldo_actual) + delta,
+              ...(fechaUltimaPorCuenta.has(cuentaId) ? { saldo_fecha: fechaUltimaPorCuenta.get(cuentaId) } : {}),
+            })
             .eq('id', cuentaId);
           if (updateError) throw updateError;
         }
@@ -432,7 +443,13 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
           }
           return delta;
         }, 0);
-        return saldoDelta ? { ...cuenta, saldo_actual: cuenta.saldo_actual + saldoDelta } : cuenta;
+        const fechaImportada = fechaUltimaPorCuenta.get(cuenta.id);
+        const saldoFecha = fechaImportada && fechaImportada > (cuenta.saldo_fecha || '')
+          ? fechaImportada
+          : cuenta.saldo_fecha;
+        return saldoDelta
+          ? { ...cuenta, saldo_actual: cuenta.saldo_actual + saldoDelta, saldo_fecha: saldoFecha }
+          : cuenta;
       }),
     }));
     get().calcularResumenes();
