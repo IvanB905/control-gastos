@@ -273,7 +273,7 @@ export const AccountsView: React.FC = () => {
               {(cuenta.limite_credito || cuenta.ingreso_mensual_estimado || cuenta.aporte_mensual || cuenta.plazo_meses || cuenta.saldo_fecha) && (
                 <div className="mt-4 space-y-1 border-t border-zinc-100 pt-3 text-[11px] text-zinc-500 dark:border-zinc-800">
                   {cuenta.limite_credito && <p>Cupo: {formatCurrency(cuenta.limite_credito, cuenta.moneda)} · Disponible: {formatCurrency(Math.max(0, cuenta.limite_credito - Math.abs(cuenta.saldo_actual)), cuenta.moneda)}</p>}
-                  {cuenta.ingreso_mensual_estimado && <p>Nómina mensual estimada: {formatCurrency(cuenta.ingreso_mensual_estimado, cuenta.moneda)}</p>}
+                  {cuenta.ingreso_mensual_estimado && <p>Ingreso mensual estimado: {formatCurrency(cuenta.ingreso_mensual_estimado, cuenta.moneda)}</p>}
                   {cuenta.aporte_mensual && <p>Aporte mensual: {formatCurrency(cuenta.aporte_mensual, cuenta.moneda)}</p>}
                   {cuenta.plazo_meses && <p>Plazo: {cuenta.plazo_meses} meses</p>}
                   {cuenta.saldo_fecha && <p>Saldo de referencia: {formatDate(cuenta.saldo_fecha)}</p>}

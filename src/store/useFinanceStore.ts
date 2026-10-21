@@ -121,7 +121,7 @@ interface FinanceState {
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
   agregarCuenta: (cuenta: Omit<Cuenta, 'id' | 'created_at' | 'saldo_actual'>) => Promise<void>;
-  actualizarSaldoCuenta: (id: string, saldoActual: number, saldoFecha: string) => Promise<void>;
+  actualizarSaldoCuenta: (id: string, saldoActual: number, saldoFecha: string, ingresoMensualEstimado?: number) => Promise<void>;
   eliminarCuenta: (id: string) => Promise<void>;
   consolidarCuentas: (origenId: string, destinoId: string) => Promise<number>;
   realizarTransferencia: (origenId: string, destinoId: string, monto: number, descripcion: string, fecha: string) => Promise<void>;
@@ -744,12 +744,17 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     }
   },
 
-  actualizarSaldoCuenta: async (id, saldoActual, saldoFecha) => {
+  actualizarSaldoCuenta: async (id, saldoActual, saldoFecha, ingresoMensualEstimado) => {
     const { data: { session } } = await supabase.auth.getSession();
+    const updates = {
+      saldo_actual: saldoActual,
+      saldo_fecha: saldoFecha,
+      ...(ingresoMensualEstimado === undefined ? {} : { ingreso_mensual_estimado: ingresoMensualEstimado }),
+    };
     if (session) {
       const { error } = await supabase
         .from('cuentas')
-        .update({ saldo_actual: saldoActual, saldo_fecha: saldoFecha })
+        .update(updates)
         .eq('id', id)
         .eq('user_id', session.user.id);
       if (error) throw error;
@@ -757,7 +762,12 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
 
     set((state) => ({
       cuentas: state.cuentas.map((cuenta) => cuenta.id === id
-        ? { ...cuenta, saldo_actual: saldoActual, saldo_fecha: saldoFecha }
+        ? {
+          ...cuenta,
+          saldo_actual: saldoActual,
+          saldo_fecha: saldoFecha,
+          ...(ingresoMensualEstimado === undefined ? {} : { ingreso_mensual_estimado: ingresoMensualEstimado }),
+        }
         : cuenta),
     }));
     persistLocally(get());
