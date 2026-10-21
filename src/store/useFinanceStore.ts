@@ -193,6 +193,125 @@ const persistLocally = (state: FinanceState) => {
   } catch (e) {}
 };
 
+const normalizeSyncKey = (value: unknown) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('es-CO');
+
+const movementSyncKey = (movement: Movimiento) => {
+  const importId = movement.notas?.match(/\[import:([a-z0-9-]+)\]/i)?.[1];
+  return [
+    movement.cuenta_id,
+    importId ? `import:${importId}` : movement.fecha,
+    movement.tipo,
+    Number(movement.monto).toFixed(2),
+    normalizeSyncKey(movement.descripcion),
+    movement.moneda,
+  ].join('|');
+};
+
+// Merges this browser's saved finance data into the authenticated user's cloud data.
+// Natural keys make repeated sign-ins safe and preserve existing cloud records.
+const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'cuentas' | 'categorias' | 'movimientos' | 'presupuestos'>) => {
+  const accountResult = await supabase.from('cuentas').select('*').eq('user_id', userId);
+  if (accountResult.error) throw accountResult.error;
+  const cloudAccounts = (accountResult.data || []) as Cuenta[];
+  const accountIds = new Map<string, string>();
+  const accountKey = (account: Cuenta) => [normalizeSyncKey(account.nombre), account.tipo, account.moneda].join('|');
+
+  for (const localAccount of local.cuentas) {
+    const key = accountKey(localAccount);
+    let cloudAccount = cloudAccounts.find((account) => accountKey(account) === key);
+    if (!cloudAccount) {
+      const { id: _id, created_at: _createdAt, ...payload } = localAccount;
+      const result = await supabase.from('cuentas').insert([{ ...payload, user_id: userId }]).select().single();
+      if (result.error || !result.data) throw result.error || new Error('No se pudo sincronizar una cuenta.');
+      cloudAccount = result.data as Cuenta;
+      cloudAccounts.push(cloudAccount);
+    } else if ((localAccount.saldo_fecha || '') > (cloudAccount.saldo_fecha || '')) {
+      const result = await supabase.from('cuentas')
+        .update({ saldo_actual: localAccount.saldo_actual, saldo_fecha: localAccount.saldo_fecha })
+        .eq('id', cloudAccount.id).eq('user_id', userId).select().single();
+      if (result.error || !result.data) throw result.error || new Error('No se pudo sincronizar el saldo de una cuenta.');
+      cloudAccount = result.data as Cuenta;
+      cloudAccounts[cloudAccounts.findIndex((account) => accountKey(account) === key)] = cloudAccount;
+    }
+    accountIds.set(localAccount.id, cloudAccount.id);
+  }
+
+  const categoryResult = await supabase.from('categorias').select('*').eq('user_id', userId);
+  if (categoryResult.error) throw categoryResult.error;
+  const cloudCategories = (categoryResult.data || []) as Categoria[];
+  const categoryIds = new Map<string, string>();
+  const categoryKey = (category: Categoria) => `${normalizeSyncKey(category.nombre)}|${category.tipo}`;
+
+  for (const localCategory of local.categorias) {
+    const key = categoryKey(localCategory);
+    let cloudCategory = cloudCategories.find((category) => categoryKey(category) === key);
+    if (!cloudCategory) {
+      const { id: _id, created_at: _createdAt, ...payload } = localCategory;
+      const result = await supabase.from('categorias').insert([{ ...payload, user_id: userId }]).select().single();
+      if (result.error || !result.data) throw result.error || new Error('No se pudo sincronizar una categoría.');
+      cloudCategory = result.data as Categoria;
+      cloudCategories.push(cloudCategory);
+    }
+    categoryIds.set(localCategory.id, cloudCategory.id);
+  }
+
+  const movementResult = await supabase.from('movimientos').select('*').eq('user_id', userId);
+  if (movementResult.error) throw movementResult.error;
+  const cloudMovements = (movementResult.data || []) as Movimiento[];
+  const knownMovementKeys = new Set(cloudMovements.map(movementSyncKey));
+  const missingMovements = local.movimientos.flatMap((movement) => {
+    const mappedAccount = accountIds.get(movement.cuenta_id);
+    if (!mappedAccount) return [];
+    const synced = {
+      ...movement,
+      user_id: userId,
+      cuenta_id: mappedAccount,
+      categoria_id: movement.categoria_id ? categoryIds.get(movement.categoria_id) || null : null,
+    };
+    if (knownMovementKeys.has(movementSyncKey(synced))) return [];
+    knownMovementKeys.add(movementSyncKey(synced));
+    const { id: _id, created_at: _createdAt, cuenta: _account, categoria: _category, ...payload } = synced;
+    return [payload];
+  });
+  if (missingMovements.length) {
+    const result = await supabase.from('movimientos').insert(missingMovements).select();
+    if (result.error) throw result.error;
+    cloudMovements.push(...((result.data || []) as Movimiento[]));
+  }
+
+  const budgetResult = await supabase.from('presupuestos').select('*').eq('user_id', userId);
+  if (budgetResult.error) throw budgetResult.error;
+  const cloudBudgets = (budgetResult.data || []) as Presupuesto[];
+  const budgetKey = (budget: Presupuesto) => [budget.categoria_id, budget.monto_limite, budget.moneda, budget.mes, budget.anio].join('|');
+  const knownBudgetKeys = new Set(cloudBudgets.map(budgetKey));
+  const missingBudgets = local.presupuestos.flatMap((budget) => {
+    const mappedCategory = categoryIds.get(budget.categoria_id);
+    if (!mappedCategory) return [];
+    const synced = { ...budget, user_id: userId, categoria_id: mappedCategory };
+    if (knownBudgetKeys.has(budgetKey(synced))) return [];
+    knownBudgetKeys.add(budgetKey(synced));
+    const { id: _id, categoria: _category, gasto_actual: _spent, ...payload } = synced;
+    return [payload];
+  });
+  if (missingBudgets.length) {
+    const result = await supabase.from('presupuestos').insert(missingBudgets).select();
+    if (result.error) throw result.error;
+    cloudBudgets.push(...((result.data || []) as Presupuesto[]));
+  }
+
+  return { cuentas: cloudAccounts, categorias: cloudCategories, movimientos: cloudMovements, presupuestos: cloudBudgets };
+};
+
+const localSyncsInFlight = new Map<string, ReturnType<typeof performLocalDataSync>>();
+const syncLocalDataToCloud = (userId: string, local: Pick<FinanceState, 'cuentas' | 'categorias' | 'movimientos' | 'presupuestos'>) => {
+  const ongoing = localSyncsInFlight.get(userId);
+  if (ongoing) return ongoing;
+  const sync = performLocalDataSync(userId, local);
+  localSyncsInFlight.set(userId, sync);
+  void sync.finally(() => localSyncsInFlight.delete(userId));
+  return sync;
+};
+
 export const useFinanceStore = create<FinanceState>((set, get) => ({
   cuentas: savedLocalData?.cuentas || DEFAULT_CUENTAS,
   categorias: savedLocalData?.categorias || DEFAULT_CATEGORIAS,
@@ -292,6 +411,33 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       }
 
       const userId = session.user.id;
+
+      const localSnapshot = loadSavedData();
+      const localDataNeedsSync = Boolean(localSnapshot && (
+        (Array.isArray(localSnapshot.movimientos) && localSnapshot.movimientos.length > 0)
+        || (Array.isArray(localSnapshot.presupuestos) && localSnapshot.presupuestos.length > 0)
+        || (Array.isArray(localSnapshot.cuentas) && localSnapshot.cuentas.some((localAccount: Cuenta) =>
+          !DEFAULT_CUENTAS.some((defaultAccount) => normalizeSyncKey(defaultAccount.nombre) === normalizeSyncKey(localAccount.nombre)
+            && defaultAccount.moneda === localAccount.moneda)))
+        || (Array.isArray(localSnapshot.categorias) && localSnapshot.categorias.some((localCategory: Categoria) =>
+          !DEFAULT_CATEGORIAS.some((defaultCategory) => normalizeSyncKey(defaultCategory.nombre) === normalizeSyncKey(localCategory.nombre)
+            && defaultCategory.tipo === localCategory.tipo)))
+      ));
+
+      if (localDataNeedsSync) {
+        const local = get();
+        const synced = await syncLocalDataToCloud(userId, {
+          cuentas: local.cuentas,
+          categorias: local.categorias,
+          movimientos: local.movimientos,
+          presupuestos: local.presupuestos,
+        });
+        set({ ...synced });
+        get().calcularResumenes();
+        persistLocally(get());
+        set({ isLoading: false });
+        return;
+      }
 
       const [resCuentas, resCategorias, resMovimientos, resPresupuestos] = await Promise.all([
         supabase.from('cuentas').select('*').eq('user_id', userId),
