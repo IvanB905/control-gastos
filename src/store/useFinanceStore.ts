@@ -207,6 +207,34 @@ const movementSyncKey = (movement: Movimiento) => {
   ].join('|');
 };
 
+const insertRowsWithSchemaFallback = async (table: 'cuentas' | 'categorias' | 'movimientos' | 'presupuestos', rows: Record<string, unknown>[]) => {
+  const payload = rows.map((row) => ({ ...row }));
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const result = await supabase.from(table).insert(payload).select();
+    if (!result.error) return result;
+    const missingColumn = result.error.code === 'PGRST204'
+      ? result.error.message.match(/Could not find the '([^']+)' column/)?.[1]
+      : undefined;
+    if (!missingColumn || !payload.some((row) => missingColumn in row)) return result;
+    payload.forEach((row) => { delete row[missingColumn]; });
+  }
+  throw new Error(`La tabla ${table} no acepta el formato de datos de esta app.`);
+};
+
+const updateRowWithSchemaFallback = async (table: 'cuentas', values: Record<string, unknown>, id: string, userId: string) => {
+  const payload = { ...values };
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const result = await supabase.from(table).update(payload).eq('id', id).eq('user_id', userId);
+    if (!result.error) return result;
+    const missingColumn = result.error.code === 'PGRST204'
+      ? result.error.message.match(/Could not find the '([^']+)' column/)?.[1]
+      : undefined;
+    if (!missingColumn || !(missingColumn in payload)) return result;
+    delete payload[missingColumn];
+  }
+  throw new Error(`La tabla ${table} no acepta la actualización de saldo.`);
+};
+
 // Merges this browser's saved finance data into the authenticated user's cloud data.
 // Natural keys make repeated sign-ins safe and preserve existing cloud records.
 const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'cuentas' | 'categorias' | 'movimientos' | 'presupuestos'>) => {
@@ -214,6 +242,7 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
   if (accountResult.error) throw accountResult.error;
   const cloudAccounts = (accountResult.data || []) as Cuenta[];
   const accountIds = new Map<string, string>();
+  const localAccountByCloudId = new Map<string, Cuenta>();
   const accountKey = (account: Cuenta) => [normalizeSyncKey(account.nombre), account.tipo, account.moneda].join('|');
 
   for (const localAccount of local.cuentas) {
@@ -221,19 +250,18 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
     let cloudAccount = cloudAccounts.find((account) => accountKey(account) === key);
     if (!cloudAccount) {
       const { id: _id, created_at: _createdAt, ...payload } = localAccount;
-      const result = await supabase.from('cuentas').insert([{ ...payload, user_id: userId }]).select().single();
+      const result = await insertRowsWithSchemaFallback('cuentas', [{ ...payload, user_id: userId }]);
       if (result.error || !result.data) throw result.error || new Error('No se pudo sincronizar una cuenta.');
-      cloudAccount = result.data as Cuenta;
+      cloudAccount = (result.data[0]) as Cuenta;
       cloudAccounts.push(cloudAccount);
     } else if ((localAccount.saldo_fecha || '') > (cloudAccount.saldo_fecha || '')) {
-      const result = await supabase.from('cuentas')
-        .update({ saldo_actual: localAccount.saldo_actual, saldo_fecha: localAccount.saldo_fecha })
-        .eq('id', cloudAccount.id).eq('user_id', userId).select().single();
-      if (result.error || !result.data) throw result.error || new Error('No se pudo sincronizar el saldo de una cuenta.');
-      cloudAccount = result.data as Cuenta;
+      const result = await updateRowWithSchemaFallback('cuentas', { saldo_actual: localAccount.saldo_actual, saldo_fecha: localAccount.saldo_fecha }, cloudAccount.id, userId);
+      if (result.error) throw result.error;
+      cloudAccount = { ...cloudAccount, saldo_actual: localAccount.saldo_actual, saldo_fecha: localAccount.saldo_fecha };
       cloudAccounts[cloudAccounts.findIndex((account) => accountKey(account) === key)] = cloudAccount;
     }
     accountIds.set(localAccount.id, cloudAccount.id);
+    localAccountByCloudId.set(cloudAccount.id, localAccount);
   }
 
   const categoryResult = await supabase.from('categorias').select('*').eq('user_id', userId);
@@ -247,9 +275,9 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
     let cloudCategory = cloudCategories.find((category) => categoryKey(category) === key);
     if (!cloudCategory) {
       const { id: _id, created_at: _createdAt, ...payload } = localCategory;
-      const result = await supabase.from('categorias').insert([{ ...payload, user_id: userId }]).select().single();
+      const result = await insertRowsWithSchemaFallback('categorias', [{ ...payload, user_id: userId }]);
       if (result.error || !result.data) throw result.error || new Error('No se pudo sincronizar una categoría.');
-      cloudCategory = result.data as Categoria;
+      cloudCategory = result.data[0] as Categoria;
       cloudCategories.push(cloudCategory);
     }
     categoryIds.set(localCategory.id, cloudCategory.id);
@@ -257,7 +285,11 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
 
   const movementResult = await supabase.from('movimientos').select('*').eq('user_id', userId);
   if (movementResult.error) throw movementResult.error;
-  const cloudMovements = (movementResult.data || []) as Movimiento[];
+  const accountCurrencyById = new Map(cloudAccounts.map((account) => [account.id, account.moneda]));
+  const cloudMovements = ((movementResult.data || []) as Movimiento[]).map((movement) => ({
+    ...movement,
+    moneda: movement.moneda || accountCurrencyById.get(movement.cuenta_id) || 'COP',
+  }));
   const knownMovementKeys = new Set(cloudMovements.map(movementSyncKey));
   const missingMovements = local.movimientos.flatMap((movement) => {
     const mappedAccount = accountIds.get(movement.cuenta_id);
@@ -270,13 +302,16 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
     };
     if (knownMovementKeys.has(movementSyncKey(synced))) return [];
     knownMovementKeys.add(movementSyncKey(synced));
-    const { id: _id, created_at: _createdAt, cuenta: _account, categoria: _category, ...payload } = synced;
+    const { id: _id, created_at: _createdAt, cuenta: _account, categoria: _category, moneda: _currency, ...payload } = synced;
     return [payload];
   });
   if (missingMovements.length) {
-    const result = await supabase.from('movimientos').insert(missingMovements).select();
+    const result = await insertRowsWithSchemaFallback('movimientos', missingMovements);
     if (result.error) throw result.error;
-    cloudMovements.push(...((result.data || []) as Movimiento[]));
+    cloudMovements.push(...((result.data || []) as Movimiento[]).map((movement) => ({
+      ...movement,
+      moneda: movement.moneda || accountCurrencyById.get(movement.cuenta_id) || 'COP',
+    })));
   }
 
   const budgetResult = await supabase.from('presupuestos').select('*').eq('user_id', userId);
@@ -294,7 +329,7 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
     return [payload];
   });
   if (missingBudgets.length) {
-    const result = await supabase.from('presupuestos').insert(missingBudgets).select();
+    const result = await insertRowsWithSchemaFallback('presupuestos', missingBudgets);
     if (result.error) throw result.error;
     cloudBudgets.push(...((result.data || []) as Presupuesto[]));
   }
@@ -304,13 +339,30 @@ const performLocalDataSync = async (userId: string, local: Pick<FinanceState, 'c
   for (const accountId of accountIds.values()) {
     const target = cloudAccounts.find((account) => account.id === accountId);
     if (!target) continue;
-    const { error } = await supabase.from('cuentas')
-      .update({ saldo_actual: target.saldo_actual, saldo_fecha: target.saldo_fecha || null })
-      .eq('id', accountId).eq('user_id', userId);
-    if (error) throw error;
+    const result = await updateRowWithSchemaFallback('cuentas', { saldo_actual: target.saldo_actual, saldo_fecha: target.saldo_fecha || null }, accountId, userId);
+    if (result.error) throw result.error;
   }
 
-  return { cuentas: cloudAccounts, categorias: cloudCategories, movimientos: cloudMovements, presupuestos: cloudBudgets };
+  const accountsForState = cloudAccounts.map((account) => {
+    const localAccount = localAccountByCloudId.get(account.id);
+    return localAccount ? {
+      ...account,
+      ingreso_mensual_estimado: account.ingreso_mensual_estimado ?? localAccount.ingreso_mensual_estimado,
+      aporte_mensual: account.aporte_mensual ?? localAccount.aporte_mensual,
+      plazo_meses: account.plazo_meses ?? localAccount.plazo_meses,
+      limite_credito: account.limite_credito ?? localAccount.limite_credito,
+      saldo_fecha: account.saldo_fecha ?? localAccount.saldo_fecha,
+    } : account;
+  });
+  const localBudgetByCloudKey = new Map(local.presupuestos.map((budget) => {
+    const mappedCategory = categoryIds.get(budget.categoria_id) || budget.categoria_id;
+    return [[mappedCategory, budget.mes, budget.anio].join('|'), budget];
+  }));
+  const budgetsForState = cloudBudgets.map((budget) => {
+    const localBudget = localBudgetByCloudKey.get([budget.categoria_id, budget.mes, budget.anio].join('|'));
+    return { ...budget, moneda: budget.moneda || localBudget?.moneda || 'COP' };
+  });
+  return { cuentas: accountsForState, categorias: cloudCategories, movimientos: cloudMovements, presupuestos: budgetsForState };
 };
 
 const localSyncsInFlight = new Map<string, ReturnType<typeof performLocalDataSync>>();
