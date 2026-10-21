@@ -239,14 +239,42 @@ interface FinanceState {
   agregarCategoria: (cat: Omit<Categoria, 'id'>) => Promise<void>;
   eliminarCategoria: (id: string) => Promise<void>;
   calcularResumenes: () => void;
+  restablecerDatosDemo: () => void;
 }
 
+const LOCAL_STORAGE_KEY = 'fintech_data_v2';
+
+const loadSavedData = () => {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return null;
+};
+
+const savedLocalData = loadSavedData();
+
+const persistLocally = (state: FinanceState) => {
+  try {
+    localStorage.setItem(
+      LOCAL_STORAGE_KEY,
+      JSON.stringify({
+        cuentas: state.cuentas,
+        categorias: state.categorias,
+        movimientos: state.movimientos,
+        presupuestos: state.presupuestos,
+        metasAhorro: state.metasAhorro,
+      })
+    );
+  } catch (e) {}
+};
+
 export const useFinanceStore = create<FinanceState>((set, get) => ({
-  cuentas: DEFAULT_CUENTAS,
-  categorias: DEFAULT_CATEGORIAS,
-  movimientos: DEFAULT_MOVIMIENTOS,
-  presupuestos: DEFAULT_PRESUPUESTOS,
-  metasAhorro: DEFAULT_METAS_AHORRO,
+  cuentas: savedLocalData?.cuentas || DEFAULT_CUENTAS,
+  categorias: savedLocalData?.categorias || DEFAULT_CATEGORIAS,
+  movimientos: savedLocalData?.movimientos || DEFAULT_MOVIMIENTOS,
+  presupuestos: savedLocalData?.presupuestos || DEFAULT_PRESUPUESTOS,
+  metasAhorro: savedLocalData?.metasAhorro || DEFAULT_METAS_AHORRO,
   isLoading: false,
   resumenCOP: {
     total_ingresos: 4500000,
@@ -388,6 +416,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     }));
 
     get().calcularResumenes();
+    persistLocally(get());
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -404,6 +433,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       movimientos: state.movimientos.map((m) => (m.id === id ? { ...m, ...updated } : m)),
     }));
     get().calcularResumenes();
+    persistLocally(get());
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -418,6 +448,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       movimientos: state.movimientos.filter((m) => m.id !== id),
     }));
     get().calcularResumenes();
+    persistLocally(get());
 
     try {
       await supabase.from('movimientos').delete().eq('id', id);
@@ -436,6 +467,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     set((state) => ({
       cuentas: [...state.cuentas, nuevaCuenta],
     }));
+    persistLocally(get());
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -455,6 +487,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     set((state) => ({
       cuentas: state.cuentas.filter((c) => c.id !== id),
     }));
+    persistLocally(get());
 
     try {
       await supabase.from('cuentas').delete().eq('id', id);
@@ -495,6 +528,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         ...state.movimientos,
       ],
     }));
+    persistLocally(get());
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -523,6 +557,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     const nuevoPresupuesto: Presupuesto = { ...p, id, gasto_actual: 0 };
     set((state) => ({ presupuestos: [...state.presupuestos, nuevoPresupuesto] }));
     get().calcularResumenes();
+    persistLocally(get());
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -536,6 +571,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     set((state) => ({
       presupuestos: state.presupuestos.filter((p) => p.id !== id),
     }));
+    persistLocally(get());
 
     try {
       await supabase.from('presupuestos').delete().eq('id', id);
@@ -546,6 +582,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     const id = `meta_${Date.now()}`;
     const nuevaMeta: MetaAhorro = { ...meta, id };
     set((state) => ({ metasAhorro: [...state.metasAhorro, nuevaMeta] }));
+    persistLocally(get());
   },
 
   abonarAMetaAhorro: async (id, monto) => {
@@ -554,18 +591,21 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         m.id === id ? { ...m, monto_actual: m.monto_actual + monto } : m
       ),
     }));
+    persistLocally(get());
   },
 
   eliminarMetaAhorro: async (id) => {
     set((state) => ({
       metasAhorro: state.metasAhorro.filter((m) => m.id !== id),
     }));
+    persistLocally(get());
   },
 
   agregarCategoria: async (cat) => {
     const id = `cat_${Date.now()}`;
     const nuevaCat: Categoria = { ...cat, id };
     set((state) => ({ categorias: [...state.categorias, nuevaCat] }));
+    persistLocally(get());
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -579,9 +619,24 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     set((state) => ({
       categorias: state.categorias.filter((c) => c.id !== id),
     }));
+    persistLocally(get());
 
     try {
       await supabase.from('categorias').delete().eq('id', id);
     } catch (e) {}
+  },
+
+  restablecerDatosDemo: () => {
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    } catch (e) {}
+    set({
+      cuentas: DEFAULT_CUENTAS,
+      categorias: DEFAULT_CATEGORIAS,
+      movimientos: DEFAULT_MOVIMIENTOS,
+      presupuestos: DEFAULT_PRESUPUESTOS,
+      metasAhorro: DEFAULT_METAS_AHORRO,
+    });
+    get().calcularResumenes();
   },
 }));

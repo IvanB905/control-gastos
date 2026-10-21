@@ -24,7 +24,7 @@ import { CategoryModal } from '../modals/CategoryModal';
 import { formatCurrency } from '../../lib/utils';
 
 export const SettingsView: React.FC = () => {
-  const { categorias, eliminarCategoria, movimientos, cuentas, presupuestos, metasAhorro, cargarDatos } = useFinanceStore();
+  const { categorias, eliminarCategoria, movimientos, cuentas, presupuestos, metasAhorro, cargarDatos, restablecerDatosDemo } = useFinanceStore();
   const { moneda, setMoneda } = useAppStore();
   const { user, signOut, setAuthModalOpen } = useAuthStore();
 
@@ -83,9 +83,9 @@ export const SettingsView: React.FC = () => {
   };
 
   const handleResetDemoData = () => {
-    if (confirm('¿Deseas recargar los datos de prueba y sincronizar con el estado inicial?')) {
-      cargarDatos();
-      setStatusMessage('Datos sincronizados correctamente.');
+    if (confirm('¿Deseas restablecer los datos al estado inicial de demostración? Esto limpiará los datos guardados localmente.')) {
+      restablecerDatosDemo();
+      setStatusMessage('Datos restablecidos al estado inicial correctamente.');
       setTimeout(() => setStatusMessage(null), 3500);
     }
   };
