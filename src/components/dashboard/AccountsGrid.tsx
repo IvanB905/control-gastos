@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
-import { formatCurrency } from '../../lib/utils';
+import { countsTowardAvailableBalance, formatCurrency } from '../../lib/utils';
 import type { TipoCuenta } from '../../types';
 
 const getAccountIcon = (tipo: TipoCuenta) => {
@@ -36,7 +36,7 @@ export const AccountsGrid: React.FC = () => {
   const { moneda } = useAppStore();
 
   const totalCuentas = cuentas
-    .filter((c) => c.moneda === moneda && c.tipo !== 'tarjeta_credito' && c.tipo !== 'credito_libre_inversion')
+    .filter((c) => c.moneda === moneda && countsTowardAvailableBalance(c))
     .reduce((acc, c) => acc + c.saldo_actual, 0);
 
   return (
@@ -47,7 +47,7 @@ export const AccountsGrid: React.FC = () => {
             Tus Billeteras & Bancos ({moneda})
           </h3>
           <p className="text-xs text-zinc-400 dark:text-zinc-500">
-            Saldo acumulado disponible: <span className="font-semibold text-zinc-800 dark:text-zinc-200">{formatCurrency(totalCuentas, moneda)}</span>
+            Saldo acumulado disponible (sin FNA): <span className="font-semibold text-zinc-800 dark:text-zinc-200">{formatCurrency(totalCuentas, moneda)}</span>
           </p>
         </div>
       </div>

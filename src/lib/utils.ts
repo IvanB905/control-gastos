@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import type { Cuenta } from '../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -35,6 +36,12 @@ export function formatDate(dateString: string): string {
     month: 'short',
     year: 'numeric',
   });
+}
+
+export function countsTowardAvailableBalance(account: Pick<Cuenta, 'tipo' | 'nombre'>): boolean {
+  if (account.tipo === 'tarjeta_credito' || account.tipo === 'credito_libre_inversion') return false;
+  const normalizedName = account.nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return !(/\bfna\b|fondo nacional del ahorro/.test(normalizedName));
 }
 
 export const MESES = [

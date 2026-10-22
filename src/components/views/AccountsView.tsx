@@ -13,7 +13,7 @@ import {
   PencilLine,
 } from 'lucide-react';
 import { useFinanceStore } from '../../store/useFinanceStore';
-import { formatCurrency, formatDate } from '../../lib/utils';
+import { countsTowardAvailableBalance, formatCurrency, formatDate } from '../../lib/utils';
 import { AccountModal } from '../modals/AccountModal';
 import { TransferModal } from '../modals/TransferModal';
 import { UpdateAccountBalanceModal } from '../modals/UpdateAccountBalanceModal';
@@ -87,11 +87,11 @@ export const AccountsView: React.FC = () => {
 
   // Cálculos consolidados
   const totalCOP = cuentas
-    .filter((c) => c.moneda === 'COP' && c.tipo !== 'tarjeta_credito' && c.tipo !== 'credito_libre_inversion')
+    .filter((c) => c.moneda === 'COP' && countsTowardAvailableBalance(c))
     .reduce((acc, c) => acc + c.saldo_actual, 0);
 
   const totalUSD = cuentas
-    .filter((c) => c.moneda === 'USD' && c.tipo !== 'tarjeta_credito' && c.tipo !== 'credito_libre_inversion')
+    .filter((c) => c.moneda === 'USD' && countsTowardAvailableBalance(c))
     .reduce((acc, c) => acc + c.saldo_actual, 0);
 
   const deudaTotal = cuentas
@@ -146,7 +146,7 @@ export const AccountsView: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
         <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
           <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
-            Disponible (COP)
+            Disponible (sin FNA) (COP)
           </span>
           <span className="text-base sm:text-xl font-bold text-zinc-900 dark:text-white block mt-1 truncate">
             {formatCurrency(totalCOP, 'COP')}
