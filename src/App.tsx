@@ -11,6 +11,7 @@ import { AccountsView } from './components/views/AccountsView';
 import { MovementsView } from './components/views/MovementsView';
 import { BudgetsView } from './components/views/BudgetsView';
 import { SettingsView } from './components/views/SettingsView';
+import { AssistantView } from './components/views/AssistantView';
 import { IncomeExpenseBarChart } from './components/charts/IncomeExpenseBarChart';
 import { CategoryDonutChart } from './components/charts/CategoryDonutChart';
 import { TransactionModal } from './components/modals/TransactionModal';
@@ -140,6 +141,10 @@ export function App() {
 
           {activeTab === 'presupuestos' && (
             <BudgetsView />
+          )}
+
+          {activeTab === 'asistente' && (
+            <AssistantView />
           )}
 
           {activeTab === 'configuracion' && (

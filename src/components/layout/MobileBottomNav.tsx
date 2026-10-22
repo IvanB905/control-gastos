@@ -4,6 +4,7 @@ import {
   ArrowLeftRight, 
   Wallet, 
   PieChart, 
+  Bot,
   Plus 
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -75,6 +76,19 @@ export const MobileBottomNav: React.FC = () => {
         >
           <PieChart className="w-5 h-5 stroke-[2.2]" />
           <span className="text-[10px] mt-0.5 tracking-tight">Metas</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('asistente')}
+          aria-label="Asistente financiero"
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors cursor-pointer ${
+            activeTab === 'asistente'
+              ? 'text-emerald-600 dark:text-emerald-400 font-bold'
+              : 'text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+          }`}
+        >
+          <Bot className="w-5 h-5 stroke-[2.2]" />
+          <span className="text-[10px] mt-0.5 tracking-tight">Asistente</span>
         </button>
       </div>
     </nav>

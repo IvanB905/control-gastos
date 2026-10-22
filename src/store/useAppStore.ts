@@ -12,8 +12,8 @@ interface AppState {
   setMoneda: (moneda: TipoMoneda) => void;
   isTransactionModalOpen: boolean;
   setTransactionModalOpen: (open: boolean) => void;
-  activeTab: 'dashboard' | 'movimientos' | 'cuentas' | 'presupuestos' | 'configuracion';
-  setActiveTab: (tab: 'dashboard' | 'movimientos' | 'cuentas' | 'presupuestos' | 'configuracion') => void;
+  activeTab: 'dashboard' | 'movimientos' | 'cuentas' | 'presupuestos' | 'asistente' | 'configuracion';
+  setActiveTab: (tab: 'dashboard' | 'movimientos' | 'cuentas' | 'presupuestos' | 'asistente' | 'configuracion') => void;
   isSidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;

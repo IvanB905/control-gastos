@@ -4,6 +4,7 @@ import {
   ArrowLeftRight, 
   Wallet, 
   PieChart, 
+  Bot,
   Settings, 
   Sun, 
   Moon, 
@@ -17,7 +18,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { cn } from '../../lib/utils';
 
 interface NavItem {
-  id: 'dashboard' | 'movimientos' | 'cuentas' | 'presupuestos' | 'configuracion';
+  id: 'dashboard' | 'movimientos' | 'cuentas' | 'presupuestos' | 'asistente' | 'configuracion';
   label: string;
   icon: React.ElementType;
   badge?: string;
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
   { id: 'movimientos', label: 'Movimientos', icon: ArrowLeftRight },
   { id: 'cuentas', label: 'Billeteras & Bancos', icon: Wallet },
   { id: 'presupuestos', label: 'Presupuestos & Metas', icon: PieChart },
+  { id: 'asistente', label: 'Asistente financiero', icon: Bot },
   { id: 'configuracion', label: 'Ajustes', icon: Settings },
 ];
 
