@@ -13,14 +13,30 @@ import {
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
 import { formatCurrency, formatDate } from '../../lib/utils';
+import type { Movimiento } from '../../types';
 import { BudgetModal } from '../modals/BudgetModal';
 import { SavingsGoalModal } from '../modals/SavingsGoalModal';
+
+const normalizeText = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+function getActualIncome(movements: Movimiento[], month: number, year: number, currency: string) {
+  return movements.reduce((total, movement) => {
+    const [movementYear, movementMonth] = movement.fecha.split('-').map(Number);
+    const isCreditDisbursement = /desembolso|prestamo|credito|avance/.test(normalizeText(movement.descripcion));
+    if (movement.tipo === 'ingreso' && movement.estado === 'completado' && movement.moneda === currency && movementYear === year && movementMonth === month && !isCreditDisbursement) {
+      return total + movement.monto;
+    }
+    return total;
+  }, 0);
+}
 
 export const BudgetsView: React.FC = () => {
   const { 
     presupuestos, 
     categorias, 
     metasAhorro, 
+    cuentas,
+    movimientos,
     eliminarPresupuesto, 
     abonarAMetaAhorro, 
     eliminarMetaAhorro 
@@ -42,6 +58,22 @@ export const BudgetsView: React.FC = () => {
   const totalPresupuestado = presupuestosFiltrados.reduce((acc, p) => acc + p.monto_limite, 0);
   const totalGastado = presupuestosFiltrados.reduce((acc, p) => acc + (p.gasto_actual || 0), 0);
   const margenDisponible = totalPresupuestado - totalGastado;
+  const ingresosRecibidos = getActualIncome(movimientos, selectedMonth, selectedYear, moneda);
+  const ingresoPrevisto = cuentas
+    .filter((cuenta) => cuenta.tipo === 'banco' && cuenta.moneda === moneda)
+    .reduce((total, cuenta) => total + (cuenta.ingreso_mensual_estimado || 0), 0);
+  const gastosDelMes = movimientos.filter((movimiento) => {
+    const [year, month] = movimiento.fecha.split('-').map(Number);
+    return movimiento.moneda === moneda && movimiento.tipo === 'gasto' && year === selectedYear && month === selectedMonth;
+  });
+  const gastosPagados = gastosDelMes
+    .filter((movimiento) => movimiento.estado === 'completado')
+    .reduce((total, movimiento) => total + movimiento.monto, 0);
+  const gastosPendientes = gastosDelMes
+    .filter((movimiento) => movimiento.estado === 'pendiente')
+    .reduce((total, movimiento) => total + movimiento.monto, 0);
+  const porcentajeIngresoRecibido = ingresoPrevisto > 0 ? Math.min(Math.round((ingresosRecibidos / ingresoPrevisto) * 100), 100) : 0;
+  const porcentajeGastoConsumido = totalPresupuestado > 0 ? Math.min(Math.round((gastosPagados / totalPresupuestado) * 100), 100) : 0;
 
   // Cálculos de metas
   const totalAhorradoMetas = metasFiltradas.reduce((acc, m) => acc + m.monto_actual, 0);
@@ -87,6 +119,47 @@ export const BudgetsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <section aria-labelledby="plan-vs-real-title" className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
+        <div>
+          <h3 id="plan-vs-real-title" className="text-base font-bold text-zinc-900 dark:text-white tracking-tight">Plan del mes frente a lo real</h3>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">Las proyecciones se muestran aparte de los movimientos ya registrados.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="rounded-xl border border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-800/30 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Ingresos</span>
+              <span className="text-[10px] text-zinc-400">{porcentajeIngresoRecibido}% del previsto recibido</span>
+            </div>
+            <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden" role="progressbar" aria-label="Porcentaje del ingreso previsto que ya se recibió" aria-valuemin={0} aria-valuemax={100} aria-valuenow={porcentajeIngresoRecibido}>
+              <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${porcentajeIngresoRecibido}%` }} />
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div><span className="block text-zinc-400">Ingreso previsto</span><strong className="text-zinc-900 dark:text-white">{formatCurrency(ingresoPrevisto, moneda)}</strong></div>
+              <div><span className="block text-zinc-400">Ingresos recibidos</span><strong className="text-emerald-600 dark:text-emerald-400">{formatCurrency(ingresosRecibidos, moneda)}</strong></div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-800/30 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Gastos</span>
+              <span className={`text-[10px] font-semibold ${gastosPagados > totalPresupuestado ? 'text-rose-500' : 'text-zinc-400'}`}>
+                {totalPresupuestado > 0 ? `${porcentajeGastoConsumido}% del presupuesto usado` : 'Fija presupuestos por categoría'}
+              </span>
+            </div>
+            <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden" role="progressbar" aria-label="Porcentaje del presupuesto de gastos consumido" aria-valuemin={0} aria-valuemax={100} aria-valuenow={porcentajeGastoConsumido}>
+              <div className={`h-full rounded-full transition-all ${gastosPagados > totalPresupuestado ? 'bg-rose-500' : 'bg-amber-500'}`} style={{ width: `${porcentajeGastoConsumido}%` }} />
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div><span className="block text-zinc-400">Límite presupuestado</span><strong className="text-zinc-900 dark:text-white">{formatCurrency(totalPresupuestado, moneda)}</strong></div>
+              <div><span className="block text-zinc-400">Gastos pagados</span><strong className="text-rose-600 dark:text-rose-400">{formatCurrency(gastosPagados, moneda)}</strong></div>
+            </div>
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Pendiente por pagar: <strong>{formatCurrency(gastosPendientes, moneda)}</strong></p>
+          </div>
+        </div>
+        <p className="text-[10px] leading-4 text-zinc-400">Los ingresos recibidos suman movimientos completados y excluyen desembolsos de créditos. Los gastos presupuestados suman tus límites por categoría; las transferencias no se cuentan como gasto.</p>
+      </section>
 
       {/* KPI Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
