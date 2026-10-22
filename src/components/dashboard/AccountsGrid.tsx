@@ -47,7 +47,7 @@ export const AccountsGrid: React.FC = () => {
             Tus Billeteras & Bancos ({moneda})
           </h3>
           <p className="text-xs text-zinc-400 dark:text-zinc-500">
-            Saldo acumulado disponible (sin FNA): <span className="font-semibold text-zinc-800 dark:text-zinc-200">{formatCurrency(totalCuentas, moneda)}</span>
+            Saldo acumulado disponible: <span className="font-semibold text-zinc-800 dark:text-zinc-200">{formatCurrency(totalCuentas, moneda)}</span>
           </p>
         </div>
       </div>
