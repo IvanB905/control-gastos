@@ -73,6 +73,7 @@ export const BudgetsView: React.FC = () => {
     .filter((movimiento) => movimiento.estado === 'pendiente')
     .reduce((total, movimiento) => total + movimiento.monto, 0);
   const porcentajeIngresoRecibido = ingresoPrevisto > 0 ? Math.min(Math.round((ingresosRecibidos / ingresoPrevisto) * 100), 100) : 0;
+  const porcentajeIngresoLabel = ingresosRecibidos > 0 && porcentajeIngresoRecibido === 0 ? '<1%' : `${porcentajeIngresoRecibido}%`;
   const porcentajeGastoConsumido = totalPresupuestado > 0 ? Math.min(Math.round((gastosPagados / totalPresupuestado) * 100), 100) : 0;
 
   // Cálculos de metas
@@ -130,7 +131,7 @@ export const BudgetsView: React.FC = () => {
           <div className="rounded-xl border border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-800/30 p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Ingresos</span>
-              <span className="text-[10px] text-zinc-400">{porcentajeIngresoRecibido}% del previsto recibido</span>
+              <span className="text-[10px] text-zinc-400">{porcentajeIngresoLabel} del previsto recibido</span>
             </div>
             <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden" role="progressbar" aria-label="Porcentaje del ingreso previsto que ya se recibió" aria-valuemin={0} aria-valuemax={100} aria-valuenow={porcentajeIngresoRecibido}>
               <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${porcentajeIngresoRecibido}%` }} />
@@ -148,9 +149,13 @@ export const BudgetsView: React.FC = () => {
                 {totalPresupuestado > 0 ? `${porcentajeGastoConsumido}% del presupuesto usado` : 'Fija presupuestos por categoría'}
               </span>
             </div>
-            <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden" role="progressbar" aria-label="Porcentaje del presupuesto de gastos consumido" aria-valuemin={0} aria-valuemax={100} aria-valuenow={porcentajeGastoConsumido}>
-              <div className={`h-full rounded-full transition-all ${gastosPagados > totalPresupuestado ? 'bg-rose-500' : 'bg-amber-500'}`} style={{ width: `${porcentajeGastoConsumido}%` }} />
-            </div>
+            {totalPresupuestado > 0 ? (
+              <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden" role="progressbar" aria-label="Porcentaje del presupuesto de gastos consumido" aria-valuemin={0} aria-valuemax={100} aria-valuenow={porcentajeGastoConsumido}>
+                <div className={`h-full rounded-full transition-all ${gastosPagados > totalPresupuestado ? 'bg-rose-500' : 'bg-amber-500'}`} style={{ width: `${porcentajeGastoConsumido}%` }} />
+              </div>
+            ) : (
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Aún no has fijado un límite de gasto para comparar.</p>
+            )}
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div><span className="block text-zinc-400">Límite presupuestado</span><strong className="text-zinc-900 dark:text-white">{formatCurrency(totalPresupuestado, moneda)}</strong></div>
               <div><span className="block text-zinc-400">Gastos pagados</span><strong className="text-rose-600 dark:text-rose-400">{formatCurrency(gastosPagados, moneda)}</strong></div>
