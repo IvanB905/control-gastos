@@ -3,7 +3,7 @@ import { Bot, LockKeyhole, Send, Sparkles, Wallet, CreditCard, GraduationCap, Li
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
 import { formatCurrency, MESES } from '../../lib/utils';
-import type { Cuenta, Movimiento, TipoMoneda } from '../../types';
+import type { Cuenta, MetaAhorro, Movimiento, TipoMoneda } from '../../types';
 
 type Message = { id: number; role: 'assistant' | 'user'; text: string };
 
@@ -16,7 +16,51 @@ function getMonthMovements(movements: Movimiento[], month: number, year: number,
   });
 }
 
-function answerQuestion(question: string, accounts: Cuenta[], goals: ReturnType<typeof useFinanceStore.getState>['metasAhorro'], movements: Movimiento[], month: number, year: number, currency: TipoMoneda) {
+type MonthlyPlan = {
+  estimatedIncome: number;
+  recordedIncome: number;
+  projectedIncome: number;
+  paidExpenses: number;
+  pendingExpenses: number;
+  fnaContribution: number;
+  universityContribution: number;
+  variableMoney: number;
+};
+
+function calculateMonthlyPlan(accounts: Cuenta[], goals: MetaAhorro[], movements: Movimiento[], month: number, year: number, currency: TipoMoneda): MonthlyPlan {
+  const items = getMonthMovements(movements, month, year, currency);
+  const estimatedIncome = accounts
+    .filter((account) => account.moneda === currency && account.tipo === 'banco')
+    .reduce((sum, account) => sum + (account.ingreso_mensual_estimado || 0), 0);
+  const recordedIncome = items
+    .filter((movement) => movement.tipo === 'ingreso' && !/desembolso|prestamo|credito|avance/.test(normalize(movement.descripcion)))
+    .reduce((sum, movement) => sum + movement.monto, 0);
+  const paidExpenses = items
+    .filter((movement) => movement.tipo === 'gasto' && movement.estado === 'completado')
+    .reduce((sum, movement) => sum + movement.monto, 0);
+  const pendingExpenses = items
+    .filter((movement) => movement.tipo === 'gasto' && movement.estado === 'pendiente')
+    .reduce((sum, movement) => sum + movement.monto, 0);
+
+  const fnaAccounts = accounts.filter((account) => account.tipo === 'ahorro' && /fna|fondo nacional del ahorro/.test(normalize(account.nombre)) && account.moneda === currency && (account.aporte_mensual || 0) > 0);
+  const fnaContribution = fnaAccounts.reduce((sum, account) => {
+    const contributionAlreadyPlannedAsExpense = items.some((movement) => {
+      const mentionsAccount = movement.cuenta_id === account.id || /fna|fondo nacional del ahorro/.test(normalize(movement.descripcion));
+      return mentionsAccount && movement.tipo === 'gasto' && movement.monto >= (account.aporte_mensual || 0) * 0.9;
+    });
+    return sum + (contributionAlreadyPlannedAsExpense ? 0 : account.aporte_mensual || 0);
+  }, 0);
+
+  const universityContribution = goals
+    .filter((goal) => goal.moneda === currency && /universidad|semestre/i.test(goal.nombre))
+    .reduce((sum, goal) => sum + Math.max(goal.monto_objetivo - goal.monto_actual, 0) / 6, 0);
+  const projectedIncome = Math.max(estimatedIncome, recordedIncome);
+  const variableMoney = projectedIncome - paidExpenses - pendingExpenses - fnaContribution - universityContribution;
+
+  return { estimatedIncome, recordedIncome, projectedIncome, paidExpenses, pendingExpenses, fnaContribution, universityContribution, variableMoney };
+}
+
+function answerQuestion(question: string, accounts: Cuenta[], goals: MetaAhorro[], movements: Movimiento[], month: number, year: number, currency: TipoMoneda, plan: MonthlyPlan) {
   const q = normalize(question);
   const monthMovements = getMonthMovements(movements, month, year, currency);
   const income = monthMovements.filter((movement) => movement.tipo === 'ingreso' && movement.estado === 'completado').reduce((sum, movement) => sum + movement.monto, 0);
@@ -44,9 +88,8 @@ function answerQuestion(question: string, accounts: Cuenta[], goals: ReturnType<
 
   if (/disponible|puedo gastar|me queda|saldo/.test(q)) {
     const liquid = accounts.filter((account) => account.moneda === currency && ['banco', 'efectivo', 'nequi_daviplata'].includes(account.tipo)).reduce((sum, account) => sum + Math.max(account.saldo_actual, 0), 0);
-    const remainingFlow = income - paid - pending;
-    const incomeNote = income === 0 ? `No hay ingresos completados registrados para ${periodName}.` : `Ingresos completados: ${formatCurrency(income, currency)}.`;
-    return `En cuentas líquidas veo ${formatCurrency(liquid, currency)} en ${currency} (no incluye ahorro del FNA ni cupo de tarjeta). Para ${periodName}: ${incomeNote}\nGastos pagados: ${formatCurrency(paid, currency)}; gastos pendientes registrados: ${formatCurrency(pending, currency)}.\n\nEl flujo registrado después de esos gastos es ${formatCurrency(remainingFlow, currency)}. Úsalo como referencia, no como presupuesto seguro: solo incluye movimientos que ya están en la app y puede faltar algún pago próximo.`;
+    const cardBalance = accounts.filter((account) => account.moneda === currency && account.tipo === 'tarjeta_credito' && account.saldo_actual < 0).reduce((sum, account) => sum + Math.abs(account.saldo_actual), 0);
+    return `Para ${periodName}, mi proyección deja ${formatCurrency(plan.variableMoney, currency)} para gastos variables después de apartar compromisos y ahorros conocidos.\n\nIngreso mensual previsto: ${formatCurrency(plan.projectedIncome, currency)}; gastos ya pagados: ${formatCurrency(plan.paidExpenses, currency)}; gastos pendientes registrados: ${formatCurrency(plan.pendingExpenses, currency)}; aporte FNA: ${formatCurrency(plan.fnaContribution, currency)}; ahorro del semestre: ${formatCurrency(plan.universityContribution, currency)}.\n\nSaldo actual en cuentas líquidas: ${formatCurrency(liquid, currency)}. El saldo de tarjeta (${formatCurrency(cardBalance, currency)}) queda por fuera hasta confirmar el valor del extracto; por eso esta cifra todavía no es un monto seguro para gastar.`;
   }
 
   if (/resumen|como voy|mes|ingres|gasto/.test(q)) {
@@ -81,6 +124,11 @@ export const AssistantView: React.FC = () => {
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
 
+  const plan = useMemo(
+    () => calculateMonthlyPlan(cuentas, metasAhorro, movimientos, selectedMonth, selectedYear, moneda),
+    [cuentas, metasAhorro, movimientos, selectedMonth, selectedYear, moneda],
+  );
+
   const overview = useMemo(() => {
     const items = getMonthMovements(movimientos, selectedMonth, selectedYear, moneda);
     const income = items.filter((item) => item.tipo === 'ingreso' && item.estado === 'completado').reduce((sum, item) => sum + item.monto, 0);
@@ -90,10 +138,14 @@ export const AssistantView: React.FC = () => {
     return { income, expenses, debt, remainingGoal };
   }, [cuentas, movimientos, metasAhorro, moneda, selectedMonth, selectedYear]);
 
+  const cardDebt = cuentas
+    .filter((account) => account.moneda === moneda && account.tipo === 'tarjeta_credito' && account.saldo_actual < 0)
+    .reduce((sum, account) => sum + Math.abs(account.saldo_actual), 0);
+
   const ask = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
-    const response = answerQuestion(trimmed, cuentas, metasAhorro, movimientos, selectedMonth, selectedYear, moneda);
+    const response = answerQuestion(trimmed, cuentas, metasAhorro, movimientos, selectedMonth, selectedYear, moneda, plan);
     setMessages((current) => [...current, { id: Date.now(), role: 'user', text: trimmed }, { id: Date.now() + 1, role: 'assistant', text: response }]);
     setQuestion('');
   };
@@ -133,6 +185,39 @@ export const AssistantView: React.FC = () => {
         ))}
       </section>
 
+      <section className="rounded-2xl border border-emerald-200 bg-white p-5 dark:border-emerald-900/50 dark:bg-zinc-900 sm:p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Plan mensual · {MESES[selectedMonth - 1]} {selectedYear}</p>
+            <h2 className="mt-1 text-base font-bold text-zinc-900 dark:text-white">Disponible proyectado para gastos variables</h2>
+          </div>
+          <p className={`text-2xl font-extrabold tracking-tight ${plan.variableMoney < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
+            {formatCurrency(plan.variableMoney, moneda)}
+          </p>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            { label: 'Ingreso previsto', value: plan.projectedIncome },
+            { label: 'Gastos pagados', value: plan.paidExpenses },
+            { label: 'Gastos pendientes', value: plan.pendingExpenses },
+            { label: 'Aporte mensual FNA', value: plan.fnaContribution },
+            { label: 'Ahorro estimado semestre', value: plan.universityContribution },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-xl bg-zinc-50 px-3 py-3 dark:bg-zinc-800/70">
+              <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{label}</p>
+              <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">{formatCurrency(value, moneda)}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+          <p className="font-semibold">Pago de tarjeta no incluido: {formatCurrency(cardDebt, moneda)} de saldo actual.</p>
+          <p>Confirma el valor del extracto antes de usar el disponible proyectado. Se muestra aparte para evitar contar las compras y el pago de la tarjeta dos veces.</p>
+        </div>
+        <p className="mt-3 text-[11px] leading-5 text-zinc-400">El ingreso previsto toma el mayor valor entre tu estimado mensual y los ingresos registrados, sin sumar ambos. El ahorro del semestre asume seis meses; el cálculo solo incluye datos guardados y no contempla gastos que falten por registrar.</p>
+      </section>
+
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-center gap-3 border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white"><Bot className="h-5 w-5" /></div>
@@ -166,7 +251,7 @@ export const AssistantView: React.FC = () => {
           </div>
           <form onSubmit={(event) => { event.preventDefault(); ask(question); }} className="flex items-center gap-2">
             <label htmlFor="assistant-question" className="sr-only">Escribe tu pregunta financiera</label>
-            <input id="assistant-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Pregunta sobre tu disponible, deudas o metas…" className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white" />
+            <input id="assistant-question" maxLength={300} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Pregunta sobre tu disponible, deudas o metas…" className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white" />
             <button type="submit" disabled={!question.trim()} aria-label="Enviar pregunta" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40">
               <Send className="h-4 w-4" />
             </button>
