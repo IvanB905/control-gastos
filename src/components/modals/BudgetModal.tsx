@@ -119,7 +119,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose }) => 
               <input
                 type="number"
                 step={moneda === 'COP' ? '1000' : '5'}
-                min="1"
+                min="0"
                 required
                 placeholder={moneda === 'COP' ? '500000' : '150'}
                 value={montoLimite}
