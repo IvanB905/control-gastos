@@ -118,7 +118,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose }) => 
               </span>
               <input
                 type="number"
-                step={moneda === 'COP' ? '1000' : '5'}
+                step={moneda === 'COP' ? '1' : '0.01'}
                 min="0"
                 required
                 placeholder={moneda === 'COP' ? '500000' : '150'}
