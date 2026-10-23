@@ -34,8 +34,8 @@ export const UpdateAccountBalanceModal: React.FC<UpdateAccountBalanceModalProps>
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4" role="dialog" aria-modal="true" aria-labelledby="balance-modal-title">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/55 p-3 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="balance-modal-title">
+      <div className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-2xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-950 sm:max-h-[92vh] sm:p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 id="balance-modal-title" className="text-base font-bold text-zinc-900 dark:text-white">Actualizar saldo</h2>

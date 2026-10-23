@@ -102,10 +102,10 @@ export const MovementsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:gap-3">
           <button
             onClick={() => setImportOpen(true)}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-colors shadow-xs cursor-pointer"
+            className="flex min-h-11 w-full items-center justify-center gap-1.5 px-2 sm:min-h-0 sm:w-auto sm:gap-2 sm:px-3.5 sm:py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-[11px] sm:text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-colors shadow-xs cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5 text-blue-500" />
             <span>Importar CSV</span>
@@ -113,15 +113,15 @@ export const MovementsView: React.FC = () => {
 
           <button
             onClick={handleExportCSV}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-colors shadow-xs cursor-pointer"
+            className="flex min-h-11 w-full items-center justify-center gap-1.5 px-2 sm:min-h-0 sm:w-auto sm:gap-2 sm:px-3.5 sm:py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-[11px] sm:text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-colors shadow-xs cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Descargar Excel</span>
+            <span>Exportar CSV</span>
           </button>
 
           <button
             onClick={() => setTransactionModalOpen(true)}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
+            className="col-span-2 flex min-h-11 w-full items-center justify-center gap-2 px-4 py-2 sm:col-span-1 sm:min-h-0 sm:w-auto rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>Nuevo Movimiento</span>
@@ -225,10 +225,10 @@ export const MovementsView: React.FC = () => {
               return (
                 <div
                   key={m.id}
-                  className="p-4 flex items-center justify-between hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40 transition-colors"
+                  className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4 hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40 transition-colors"
                 >
                   {/* Left: Icon & Info */}
-                  <div className="flex items-center gap-3.5">
+                  <div className="flex min-w-0 items-start gap-3.5">
                     <div
                       className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                         isTransfer
@@ -247,9 +247,9 @@ export const MovementsView: React.FC = () => {
                       )}
                     </div>
 
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-zinc-900 dark:text-white">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="break-words text-sm font-semibold text-zinc-900 dark:text-white">
                           {m.descripcion}
                         </span>
                         {m.estado === 'pendiente' && (
@@ -260,7 +260,7 @@ export const MovementsView: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-400 dark:text-zinc-500">
                         <span>{formatDate(m.fecha)}</span>
                         <span>•</span>
                         <span>{categoria?.nombre || 'General'}</span>
@@ -273,7 +273,7 @@ export const MovementsView: React.FC = () => {
                   </div>
 
                   {/* Right: Amount & Actions */}
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-between gap-3 pl-[3.375rem] sm:justify-end sm:pl-0">
                     <div className="text-right">
                       <span
                         className={`text-sm font-bold tracking-tight block ${
@@ -296,7 +296,7 @@ export const MovementsView: React.FC = () => {
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => setEditingMovement(m)}
-                        className="p-1.5 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                        className="flex min-h-10 min-w-10 items-center justify-center p-1.5 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
                         title="Editar movimiento"
                       >
                         <Edit3 className="w-4 h-4" />
@@ -304,7 +304,7 @@ export const MovementsView: React.FC = () => {
 
                       <button
                         onClick={() => eliminarMovimiento(m.id)}
-                        className="p-1.5 text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
+                        className="flex min-h-10 min-w-10 items-center justify-center p-1.5 text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
                         title="Eliminar movimiento"
                       >
                         <Trash2 className="w-4 h-4" />

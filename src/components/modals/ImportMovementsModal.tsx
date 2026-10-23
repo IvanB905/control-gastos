@@ -172,8 +172,8 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
   const summary = (tipo: ImportRow['tipo']) => readyRows.filter((row) => row.tipo === tipo).length;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="import-title">
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/55 p-3 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-labelledby="import-title">
+      <div className="my-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950 sm:max-h-[92vh]">
         <div className="flex items-start justify-between border-b border-zinc-100 p-5 dark:border-zinc-800">
           <div>
             <h2 id="import-title" className="text-lg font-bold text-zinc-900 dark:text-white">Importar extracto bancario</h2>

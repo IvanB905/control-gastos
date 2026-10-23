@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { MobileBottomNav } from './components/layout/MobileBottomNav';
 import { KpiCards } from './components/dashboard/KpiCards';
+import { DailySpendingProjection } from './components/dashboard/DailySpendingProjection';
 import { MonthlySummary } from './components/dashboard/MonthlySummary';
 import { AccountsGrid } from './components/dashboard/AccountsGrid';
 import { RecentTransactions } from './components/dashboard/RecentTransactions';
@@ -73,15 +75,15 @@ export function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans antialiased transition-colors">
+    <div className={`flex h-screen h-dvh min-w-0 w-full max-w-full overflow-hidden bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans antialiased transition-colors ${Capacitor.getPlatform() === 'android' ? 'pt-[var(--safe-area-inset-top,env(safe-area-inset-top))]' : ''}`}>
       {/* Sleek Sidebar */}
       <Sidebar />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col h-full overflow-hidden">
         <Header />
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 md:space-y-7 pb-24 md:pb-8">
+        <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-6 md:p-8 space-y-5 sm:space-y-6 md:space-y-7 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-8">
           {syncError && (
             <section role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between">
               <p>{syncError}</p>
@@ -101,6 +103,8 @@ export function App() {
               <section>
                 <KpiCards />
               </section>
+
+              <DailySpendingProjection />
 
               <MonthlySummary />
 

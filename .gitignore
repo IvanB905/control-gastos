@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Estados de cuenta y exportaciones financieras personales (no subir al repositorio)
+Extracto_202609_Cuentas_de ahorro_6371.pdf
+Extracto_202609_Cuentas_de ahorro_6371.xlsx
+Extracto_202609_Mastercard_Detallado_7431.pdf
+Extracto_202609_Mastercard_Detallado_7431.xlsx
+movimientos_importacion_jul_sep_2026.csv
+movimientos_octubre_2026.csv
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

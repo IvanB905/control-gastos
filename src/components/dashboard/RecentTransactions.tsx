@@ -99,12 +99,12 @@ export const RecentTransactions: React.FC = () => {
             return (
               <div
                 key={m.id}
-                className="py-3.5 flex items-center justify-between group hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 px-2 rounded-xl transition-colors"
+                className="group flex min-w-0 flex-col items-stretch gap-2.5 rounded-xl px-2 py-3.5 transition-colors hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
               >
                 {/* Left: Icon & Details */}
-                <div className="flex items-center gap-3.5">
+                <div className="flex min-w-0 items-start gap-3.5 sm:items-center">
                   <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                       isGasto
                         ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400'
                         : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
@@ -113,9 +113,9 @@ export const RecentTransactions: React.FC = () => {
                     {isGasto ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
                   </div>
 
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-zinc-900 dark:text-white">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="min-w-0 break-words text-sm font-semibold text-zinc-900 dark:text-white">
                         {m.descripcion}
                       </span>
                       {m.estado === 'pendiente' && (
@@ -125,12 +125,12 @@ export const RecentTransactions: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-                      <span>{formatDate(m.fecha)}</span>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-400 dark:text-zinc-500">
+                      <span className="shrink-0">{formatDate(m.fecha)}</span>
                       <span>•</span>
                       <span>{categoria?.nombre || 'General'}</span>
                       <span>•</span>
-                      <span className="font-medium text-zinc-500 dark:text-zinc-400">
+                      <span className="min-w-0 break-words font-medium text-zinc-500 dark:text-zinc-400">
                         {cuenta?.nombre || 'Cuenta'}
                       </span>
                     </div>
@@ -138,9 +138,9 @@ export const RecentTransactions: React.FC = () => {
                 </div>
 
                 {/* Right: Amount & Actions */}
-                <div className="flex items-center gap-4">
+                <div className="flex min-w-0 w-full items-center justify-between gap-3 pl-[3.375rem] sm:w-auto sm:justify-end sm:pl-0">
                   <span
-                    className={`text-sm font-bold tracking-tight ${
+                    className={`min-w-0 break-words text-right text-sm font-bold tracking-tight sm:whitespace-nowrap ${
                       isGasto ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
                     }`}
                   >
