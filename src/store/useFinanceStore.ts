@@ -15,9 +15,8 @@ const DEFAULT_CUENTAS: Cuenta[] = [
     color: '#004481',
     icono: 'Landmark',
     es_predeterminada: true,
-    // Nómina + bono semanal de $100.000 anualizado a su equivalente mensual
-    // (~$433.333). El bono de transporte es el mismo ingreso y no se suma aparte.
-    ingreso_mensual_estimado: 2302849,
+    // Nómina + bono de transporte de $400.000 al mes. El bono semanal es el mismo ingreso.
+    ingreso_mensual_estimado: 2269516,
     saldo_fecha: '2026-09-30',
   },
   {
