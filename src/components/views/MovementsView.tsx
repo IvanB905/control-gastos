@@ -221,6 +221,14 @@ export const MovementsView: React.FC = () => {
               const isTransfer = m.tipo === 'transferencia';
               const categoria = categorias.find((c) => c.id === m.categoria_id);
               const cuenta = cuentas.find((c) => c.id === m.cuenta_id);
+              const counterpartId = m.notas?.match(/\[(?:destino|origen):([0-9a-f-]{36})\]/i)?.[1];
+              const counterpart = counterpartId ? cuentas.find((c) => c.id === counterpartId) : undefined;
+              const isIncomingTransfer = m.notas?.includes('[flujo:entrada]');
+              const accountLabel = !isTransfer
+                ? cuenta?.nombre || 'Cuenta'
+                : isIncomingTransfer
+                  ? `${counterpart?.nombre || 'Cuenta externa'} → ${cuenta?.nombre || 'Cuenta'}`
+                  : `${cuenta?.nombre || 'Cuenta'} → ${counterpart?.nombre || 'Cuenta externa'}`;
 
               return (
                 <div
@@ -263,10 +271,10 @@ export const MovementsView: React.FC = () => {
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-400 dark:text-zinc-500">
                         <span>{formatDate(m.fecha)}</span>
                         <span>•</span>
-                        <span>{categoria?.nombre || 'General'}</span>
+                        <span>{isTransfer ? 'Transferencia' : categoria?.nombre || 'General'}</span>
                         <span>•</span>
                         <span className="font-medium text-zinc-600 dark:text-zinc-400">
-                          {cuenta?.nombre || 'Cuenta'}
+                          {accountLabel}
                         </span>
                       </div>
                     </div>

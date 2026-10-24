@@ -12,24 +12,40 @@ import org.json.JSONObject;
 
 import java.text.Normalizer;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Captures only recognizable Bancolombia/Nequi transaction notifications.
+ * Captures only recognizable transaction notifications from explicitly allowed bank apps.
  * Notification text is parsed in memory and is never persisted or logged.
  */
 public class BankNotificationListener extends NotificationListenerService {
     private static final String PREFS = "captured_bank_transactions";
     private static final String QUEUE_KEY = "queue";
     private static final int MAX_PENDING = 50;
-    private static final String BANCOLOMBIA_PACKAGE = "co.com.bancolombia.personas.superapp";
-    private static final String NEQUI_PACKAGE = "com.nequi.MobileApp";
-    private static final Pattern CURRENCY_AMOUNT = Pattern.compile("(?i)(COP|USD|US\\$|\\$)\\s*([0-9][0-9.,]*)");
+    private static final Set<String> BANK_PACKAGES = Collections.unmodifiableSet(new java.util.HashSet<>(Arrays.asList(
+        "co.com.bancolombia.personas.superapp",
+        "com.nequi.MobileApp",
+        "com.bbva.mb",
+        "com.bancodebogota.bancamovil",
+        "com.bcs.retail",
+        "com.davivienda.daviviendaapp",
+        "com.davivienda.daviplataapp",
+        "eu.netinfo.colpatria.system",
+        "com.grupoavaloc1.bancamovil",
+        "co.com.bancoagrario.icbanking.v7",
+        "co.gov.bancoagrario.bico",
+        "co.com.lulobank.production",
+        "com.nu.production"
+    )));
+    private static final Pattern CURRENCY_AMOUNT = Pattern.compile("(?i)(COP|USD|US\\$|\\$)\\s*\\$?\\s*([0-9][0-9.,]*)");
     private static final Pattern SUFFIX_AMOUNT = Pattern.compile("(?i)([0-9][0-9.,]*)\\s*(COP|USD)");
     private static final Pattern NUMBER_PART = Pattern.compile("[0-9][0-9.,]*");
 
@@ -41,11 +57,7 @@ public class BankNotificationListener extends NotificationListenerService {
     }
 
     private boolean isSupportedBank(String packageName) {
-        return BANCOLOMBIA_PACKAGE.equals(packageName) || NEQUI_PACKAGE.equals(packageName);
-    }
-
-    private String supportedBankLabel(String packageName) {
-        return NEQUI_PACKAGE.equals(packageName) ? "Nequi" : "Bancolombia";
+        return packageName != null && BANK_PACKAGES.contains(packageName);
     }
 
     private JSONObject parseNotification(StatusBarNotification sbn) {
@@ -67,19 +79,16 @@ public class BankNotificationListener extends NotificationListenerService {
         String sourceText = (title + " " + body).trim();
         String normalized = normalize(sourceText);
         if (normalized.contains("rechazad") || normalized.contains("no fue aprobada") || normalized.contains("no se pudo realizar")) return null;
-        // Card repayments and transfers need two-account handling; don't mislabel them as income/expense.
-        if (containsAny(normalized, "transferencia", "transferiste", "enviaste", "te enviaron", "te transfirieron", "pago de tarjeta", "pago tarjeta", "abono a tarjeta")) return null;
-
         String type = detectType(normalized);
         if (type == null) return null;
+        String flow = type.equals("transferencia") ? detectFlow(normalized) : null;
         Amount amount = detectAmount(sourceText);
         if (amount == null || amount.value <= 0) return null;
 
-        String source = supportedBankLabel(sbn.getPackageName());
+        String source = appLabel(sbn.getPackageName());
         String description = cleanDescription(type, source);
-        String accountHint = source.equals("Nequi")
-            ? "nequi_daviplata"
-            : (normalized.contains("tarjeta") || normalized.contains("mastercard") || normalized.contains("visa") ? "tarjeta_credito" : "banco");
+        String accountHint = type.equals("gasto") && (normalized.contains("tarjeta") || normalized.contains("mastercard") || normalized.contains("visa"))
+            ? "tarjeta_credito" : isWalletPackage(sbn.getPackageName()) ? "nequi_daviplata" : "banco";
         long postTime = sbn.getPostTime() > 0 ? sbn.getPostTime() : System.currentTimeMillis();
         SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT);
         dateFormatter.setTimeZone(TimeZone.getDefault());
@@ -93,6 +102,7 @@ public class BankNotificationListener extends NotificationListenerService {
             item.put("amount", amount.value);
             item.put("currency", amount.currency);
             item.put("type", type);
+            if (flow != null) item.put("flow", flow);
             item.put("date", date);
             item.put("description", description);
             item.put("source", source);
@@ -105,9 +115,30 @@ public class BankNotificationListener extends NotificationListenerService {
     }
 
     private static String detectType(String text) {
-        if (containsAny(text, "recibiste", "recibio", "recibió", "abono", "consignacion", "ingreso recibido")) return "ingreso";
-        if (containsAny(text, "compra", "retiro", "pagaste", "pago realizado", "debito", "compra aprobada", "se debito", "realizaste un pago")) return "gasto";
+        if (containsAny(text, "transferencia", "transferiste", "enviaste", "te enviaron", "te transfirieron", "pago de tarjeta", "pago tarjeta", "abono a tarjeta")) return "transferencia";
+        if (containsAny(text, "recibiste", "recibio", "recibió", "abono", "consignacion", "ingreso recibido", "pago recibido")) return "ingreso";
+        if (containsAny(text, "compra", "retiro", "pagaste", "pago", "debito", "compra aprobada", "se debito", "realizaste un pago")) return "gasto";
         return null;
+    }
+
+    private static String detectFlow(String text) {
+        if (containsAny(text, "recibiste", "te enviaron", "te transfirieron", "transferencia recibida", "transferida a tu cuenta", "abono a tu cuenta")) return "entrada";
+        if (containsAny(text, "transferiste", "enviaste", "transferencia enviada", "transferencia realizada", "pago de tarjeta", "pago tarjeta", "abono a tarjeta")) return "salida";
+        return null;
+    }
+
+    private String appLabel(String packageName) {
+        try {
+            CharSequence label = getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(packageName, 0));
+            if (label != null && !label.toString().trim().isEmpty()) return label.toString().trim();
+        } catch (Exception ignored) { }
+        return packageName;
+    }
+
+    private static boolean isWalletPackage(String packageName) {
+        return "com.nequi.MobileApp".equals(packageName)
+            || "com.davivienda.daviplataapp".equals(packageName)
+            || "co.gov.bancoagrario.bico".equals(packageName);
     }
 
     private static Amount detectAmount(String text) {
@@ -148,7 +179,10 @@ public class BankNotificationListener extends NotificationListenerService {
     }
 
     private static String cleanDescription(String type, String source) {
-        return (type.equals("ingreso") ? "Ingreso detectado · " : "Gasto detectado · ") + source;
+        String label = type.equals("ingreso") ? "Ingreso detectado · "
+            : type.equals("transferencia") ? "Transferencia detectada · "
+            : "Pago detectado · ";
+        return label + source;
     }
 
     private static String text(CharSequence value) {

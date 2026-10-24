@@ -4,7 +4,8 @@ export interface CapturedBankNotification {
   id: string;
   amount: number;
   currency: 'COP' | 'USD';
-  type: 'ingreso' | 'gasto';
+  type: 'ingreso' | 'gasto' | 'transferencia';
+  flow?: 'entrada' | 'salida';
   date: string;
   description: string;
   source: string;

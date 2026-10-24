@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <queries>
+        <package android:name="co.com.bancolombia.personas.superapp" />
+        <package android:name="com.nequi.MobileApp" />
+        <package android:name="com.bbva.mb" />
+        <package android:name="com.bancodebogota.bancamovil" />
+        <package android:name="com.bcs.retail" />
+        <package android:name="com.davivienda.daviviendaapp" />
+        <package android:name="com.davivienda.daviplataapp" />
+        <package android:name="eu.netinfo.colpatria.system" />
+        <package android:name="com.grupoavaloc1.bancamovil" />
+        <package android:name="co.com.bancoagrario.icbanking.v7" />
+        <package android:name="co.gov.bancoagrario.bico" />
+        <package android:name="co.com.lulobank.production" />
+        <package android:name="com.nu.production" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

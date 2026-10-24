@@ -121,7 +121,7 @@ interface FinanceState {
   agregarMovimiento: (movimiento: Omit<Movimiento, 'id' | 'created_at'>) => Promise<void>;
   programarPagoTarjeta: (datos: { origenId: string; destinoId: string; monto: number; fecha: string; descripcion: string }) => Promise<void>;
   marcarPagoPendiente: (id: string) => Promise<void>;
-  registrarMovimientoNotificacion: (movimiento: Omit<Movimiento, 'id' | 'created_at'>, notificationId: string) => Promise<void>;
+  registrarMovimientoNotificacion: (movimiento: Omit<Movimiento, 'id' | 'created_at'>, notificationId: string, transfer?: { flow: 'entrada' | 'salida'; counterpartId?: string }) => Promise<void>;
   importarMovimientos: (movimientos: Omit<Movimiento, 'id' | 'created_at'>[], opciones?: { actualizarSaldos?: boolean }) => Promise<void>;
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
@@ -701,13 +701,22 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     get().calcularResumenes();
   },
 
-  registrarMovimientoNotificacion: async (nuevo, notificationId) => {
+  registrarMovimientoNotificacion: async (nuevo, notificationId, transfer) => {
     const { cuentas, categorias } = get();
     const cuenta = cuentas.find((item) => item.id === nuevo.cuenta_id);
     if (!cuenta || cuenta.moneda !== nuevo.moneda) throw new Error('La cuenta seleccionada no coincide con la moneda detectada.');
     if ((!countsTowardAvailableBalance(cuenta) && cuenta.tipo !== 'tarjeta_credito') || cuenta.tipo === 'credito_libre_inversion') throw new Error('Elige una cuenta transaccional; el FNA y los créditos no se usan como cuenta de movimientos.');
-    if (nuevo.tipo !== 'ingreso' && nuevo.tipo !== 'gasto') throw new Error('Solo se pueden registrar ingresos o gastos detectados.');
-    if (!categorias.some((category) => category.id === nuevo.categoria_id && category.tipo === nuevo.tipo)) throw new Error('Selecciona una categoría del mismo tipo del movimiento.');
+    if (nuevo.tipo === 'transferencia') {
+      if (!transfer || !['entrada', 'salida'].includes(transfer.flow)) throw new Error('Indica si la transferencia entró o salió de la cuenta seleccionada.');
+      if (transfer.counterpartId === nuevo.cuenta_id) throw new Error('La cuenta relacionada debe ser distinta de la cuenta del movimiento.');
+      if (transfer.counterpartId) {
+        const counterpart = cuentas.find((item) => item.id === transfer.counterpartId);
+        if (!counterpart || counterpart.moneda !== nuevo.moneda || counterpart.tipo === 'credito_libre_inversion' || !countsTowardAvailableBalance(counterpart) && counterpart.tipo !== 'tarjeta_credito') throw new Error('Selecciona una cuenta relacionada válida y en la misma moneda.');
+      }
+    } else {
+      if (nuevo.tipo !== 'ingreso' && nuevo.tipo !== 'gasto') throw new Error('El tipo de movimiento no es válido.');
+      if (!categorias.some((category) => category.id === nuevo.categoria_id && category.tipo === nuevo.tipo)) throw new Error('Selecciona una categoría del mismo tipo del movimiento.');
+    }
     const parsedDate = new Date(`${nuevo.fecha}T00:00:00.000Z`);
     if (!/^[0-9a-f-]{36}$/i.test(notificationId) || !Number.isFinite(nuevo.monto) || nuevo.monto <= 0 || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== nuevo.fecha || !nuevo.descripcion.trim() || nuevo.descripcion.length > 255) throw new Error('El identificador, monto, fecha o descripción del movimiento no son válidos.');
 
@@ -722,18 +731,22 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       p_moneda: nuevo.moneda,
       p_fecha: nuevo.fecha,
       p_descripcion: nuevo.descripcion,
+      p_flujo: transfer?.flow ?? null,
+      p_contraparte_id: transfer?.counterpartId || null,
     });
     if (error) throw error;
-    const result = data as { movement?: Movimiento; account_balance?: number } | null;
-    if (!result?.movement || !Number.isFinite(Number(result.account_balance))) throw new Error('Supabase no devolvió el movimiento registrado.');
+    const result = data as { movement?: Movimiento; account_balances?: Record<string, number>; applied?: boolean } | null;
+    if (!result?.movement || !result.account_balances || !Object.keys(result.account_balances).length) throw new Error('Supabase no devolvió el movimiento registrado.');
     const savedMovement = result.movement;
-    const serverBalance = Number(result.account_balance);
+    const serverBalances = result.account_balances;
 
     set((state) => ({
       movimientos: state.movimientos.some((item) => item.id === savedMovement.id)
         ? state.movimientos.map((item) => item.id === savedMovement.id ? savedMovement : item)
         : [savedMovement, ...state.movimientos],
-      cuentas: state.cuentas.map((item) => item.id === savedMovement.cuenta_id ? { ...item, saldo_actual: serverBalance } : item),
+      cuentas: state.cuentas.map((item) => Object.prototype.hasOwnProperty.call(serverBalances, item.id)
+        ? { ...item, saldo_actual: Number(serverBalances[item.id]) }
+        : item),
     }));
     persistLocally(get());
     get().calcularResumenes();
@@ -861,8 +874,27 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   eliminarMovimiento: async (id) => {
+    const deletedMovement = get().movimientos.find((movement) => movement.id === id);
+    const transferDeltas = new Map<string, number>();
+    if (deletedMovement?.notification_id && deletedMovement.tipo === 'transferencia' && deletedMovement.estado === 'completado') {
+      const flowDelta = deletedMovement.notas?.includes('[flujo:entrada]') ? deletedMovement.monto : -deletedMovement.monto;
+      const sourceDelta = -flowDelta;
+      const relatedAccountId = deletedMovement.notas?.match(/\[(?:destino|origen):([0-9a-f-]{36})\]/i)?.[1];
+      const sourceAccount = get().cuentas.find((account) => account.id === deletedMovement.cuenta_id);
+      if (sourceAccount && (!sourceAccount.saldo_fecha || deletedMovement.fecha > sourceAccount.saldo_fecha)) {
+        transferDeltas.set(sourceAccount.id, sourceDelta);
+      }
+      const relatedAccount = relatedAccountId && get().cuentas.find((account) => account.id === relatedAccountId);
+      if (relatedAccount && (!relatedAccount.saldo_fecha || deletedMovement.fecha > relatedAccount.saldo_fecha)) {
+        transferDeltas.set(relatedAccount.id, -sourceDelta);
+      }
+    }
     set((state) => ({
       movimientos: state.movimientos.filter((m) => m.id !== id),
+      cuentas: state.cuentas.map((account) => {
+        const delta = transferDeltas.get(account.id);
+        return delta ? { ...account, saldo_actual: account.saldo_actual + delta } : account;
+      }),
     }));
     get().calcularResumenes();
     persistLocally(get());
