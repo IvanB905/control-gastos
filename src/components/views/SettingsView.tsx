@@ -22,6 +22,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { CategoryModal } from '../modals/CategoryModal';
 import { formatCurrency } from '../../lib/utils';
+import { NotificationCaptureSettings } from './NotificationCaptureSettings';
 
 export const SettingsView: React.FC = () => {
   const { categorias, eliminarCategoria, movimientos, cuentas, presupuestos, metasAhorro, cargarDatos, restablecerDatosDemo } = useFinanceStore();
@@ -298,6 +299,8 @@ export const SettingsView: React.FC = () => {
 
         {/* Right Column (1 Col): Supabase Cloud, Auth & Backup */}
         <div className="space-y-6">
+
+          <NotificationCaptureSettings isAuthenticated={Boolean(user)} />
           
           {/* Supabase Connection Status Card */}
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-6 shadow-xs space-y-4">

@@ -12,6 +12,9 @@ La aplicación web se empaqueta con Capacitor para reutilizar React y Vite. La w
 - Los proyectos nativos `android/` e `ios/` ya están generados y sincronizados con el build web.
 - Este equipo quedó usando Node.js 24.11.1, compatible con Capacitor 8.
 - Hay un APK de depuración generado localmente para instalarlo y revisar la vista móvil. Aún no existe un APK/AAB de lanzamiento firmado ni una IPA, y la app no se ha publicado en las tiendas.
+- Android incluye un lector opcional de notificaciones para movimientos de Bancolombia y Nequi. El usuario debe habilitar el acceso especial desde los ajustes del sistema. El servicio filtra esas apps localmente, conserva como máximo 50 borradores interpretados y no guarda el texto completo de la notificación. El usuario revisa monto, fecha, tipo, cuenta y categoría; solo entonces se crea el movimiento en Supabase.
+- La lectura entre aplicaciones solo está disponible en la app Android instalada. La versión web y la app iOS no acceden a notificaciones de otras apps.
+- Antes de solicitar publicación en Google Play, la ficha y la política de privacidad deben explicar el acceso a notificaciones y declarar correctamente la información financiera procesada. La autorización técnica de Android no garantiza la aprobación de Google Play.
 
 ## Requisitos locales
 
@@ -49,6 +52,9 @@ Las futuras actualizaciones del frontend requieren `npm run build` y `npm run ca
 ## Referencias oficiales
 
 - [Capacitor](https://capacitorjs.com/docs)
+- [Android `NotificationListenerService`](https://developer.android.com/reference/android/service/notification/NotificationListenerService)
+- [Android `NotificationManager.isNotificationListenerAccessGranted`](https://developer.android.com/reference/android/app/NotificationManager#isNotificationListenerAccessGranted(android.content.ComponentName))
+- [Política de Google Play sobre información sensible](https://support.google.com/googleplay/android-developer/answer/16558241)
 - [Requisitos de entorno de Capacitor](https://capacitorjs.com/docs/getting-started/environment-setup)
 - [Apple App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
 - [Crear y configurar una app en Google Play](https://support.google.com/googleplay/android-developer/answer/9859152)

@@ -79,6 +79,7 @@ export interface Movimiento {
   estado: EstadoMovimiento;
   es_recurrente: boolean;
   notas?: string;
+  notification_id?: string;
   created_at?: string;
   cuenta?: Cuenta;
   categoria?: Categoria;

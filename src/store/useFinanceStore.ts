@@ -121,6 +121,7 @@ interface FinanceState {
   agregarMovimiento: (movimiento: Omit<Movimiento, 'id' | 'created_at'>) => Promise<void>;
   programarPagoTarjeta: (datos: { origenId: string; destinoId: string; monto: number; fecha: string; descripcion: string }) => Promise<void>;
   marcarPagoPendiente: (id: string) => Promise<void>;
+  registrarMovimientoNotificacion: (movimiento: Omit<Movimiento, 'id' | 'created_at'>, notificationId: string) => Promise<void>;
   importarMovimientos: (movimientos: Omit<Movimiento, 'id' | 'created_at'>[], opciones?: { actualizarSaldos?: boolean }) => Promise<void>;
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
@@ -695,6 +696,44 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         const update = accountUpdates.find((candidate) => candidate.account.id === account.id);
         return update ? { ...account, saldo_actual: update.balance } : account;
       }),
+    }));
+    persistLocally(get());
+    get().calcularResumenes();
+  },
+
+  registrarMovimientoNotificacion: async (nuevo, notificationId) => {
+    const { cuentas, categorias } = get();
+    const cuenta = cuentas.find((item) => item.id === nuevo.cuenta_id);
+    if (!cuenta || cuenta.moneda !== nuevo.moneda) throw new Error('La cuenta seleccionada no coincide con la moneda detectada.');
+    if ((!countsTowardAvailableBalance(cuenta) && cuenta.tipo !== 'tarjeta_credito') || cuenta.tipo === 'credito_libre_inversion') throw new Error('Elige una cuenta transaccional; el FNA y los créditos no se usan como cuenta de movimientos.');
+    if (nuevo.tipo !== 'ingreso' && nuevo.tipo !== 'gasto') throw new Error('Solo se pueden registrar ingresos o gastos detectados.');
+    if (!categorias.some((category) => category.id === nuevo.categoria_id && category.tipo === nuevo.tipo)) throw new Error('Selecciona una categoría del mismo tipo del movimiento.');
+    const parsedDate = new Date(`${nuevo.fecha}T00:00:00.000Z`);
+    if (!/^[0-9a-f-]{36}$/i.test(notificationId) || !Number.isFinite(nuevo.monto) || nuevo.monto <= 0 || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== nuevo.fecha || !nuevo.descripcion.trim() || nuevo.descripcion.length > 255) throw new Error('El identificador, monto, fecha o descripción del movimiento no son válidos.');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para guardar el movimiento detectado en tu cuenta.');
+    const { data, error } = await supabase.rpc('registrar_movimiento_notificacion', {
+      p_notification_id: notificationId,
+      p_cuenta_id: nuevo.cuenta_id,
+      p_categoria_id: nuevo.categoria_id,
+      p_tipo: nuevo.tipo,
+      p_monto: nuevo.monto,
+      p_moneda: nuevo.moneda,
+      p_fecha: nuevo.fecha,
+      p_descripcion: nuevo.descripcion,
+    });
+    if (error) throw error;
+    const result = data as { movement?: Movimiento; account_balance?: number } | null;
+    if (!result?.movement || !Number.isFinite(Number(result.account_balance))) throw new Error('Supabase no devolvió el movimiento registrado.');
+    const savedMovement = result.movement;
+    const serverBalance = Number(result.account_balance);
+
+    set((state) => ({
+      movimientos: state.movimientos.some((item) => item.id === savedMovement.id)
+        ? state.movimientos.map((item) => item.id === savedMovement.id ? savedMovement : item)
+        : [savedMovement, ...state.movimientos],
+      cuentas: state.cuentas.map((item) => item.id === savedMovement.cuenta_id ? { ...item, saldo_actual: serverBalance } : item),
     }));
     persistLocally(get());
     get().calcularResumenes();
