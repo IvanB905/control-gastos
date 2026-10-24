@@ -16,6 +16,7 @@ import { formatCurrency, formatDate } from '../../lib/utils';
 import type { Movimiento } from '../../types';
 import { BudgetModal } from '../modals/BudgetModal';
 import { SavingsGoalModal } from '../modals/SavingsGoalModal';
+import { PaymentCalendar } from './PaymentCalendar';
 
 const normalizeText = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
@@ -165,6 +166,8 @@ export const BudgetsView: React.FC = () => {
         </div>
         <p className="text-[10px] leading-4 text-zinc-400">Los ingresos recibidos suman movimientos completados y excluyen desembolsos de créditos. Los gastos presupuestados suman tus límites por categoría; las transferencias no se cuentan como gasto.</p>
       </section>
+
+      <PaymentCalendar month={selectedMonth} year={selectedYear} />
 
       {/* KPI Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">

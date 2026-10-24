@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Cuenta, Categoria, Movimiento, Presupuesto, MetaAhorro, ResumenMensual, TipoMoneda } from '../types';
 import { supabase } from '../lib/supabase';
+import { countsTowardAvailableBalance } from '../lib/utils';
 
 // Configuración inicial basada en las cuentas informadas por el usuario.
 const DEFAULT_CUENTAS: Cuenta[] = [
@@ -118,6 +119,8 @@ interface FinanceState {
   
   cargarDatos: () => Promise<void>;
   agregarMovimiento: (movimiento: Omit<Movimiento, 'id' | 'created_at'>) => Promise<void>;
+  programarPagoTarjeta: (datos: { origenId: string; destinoId: string; monto: number; fecha: string; descripcion: string }) => Promise<void>;
+  marcarPagoPendiente: (id: string) => Promise<void>;
   importarMovimientos: (movimientos: Omit<Movimiento, 'id' | 'created_at'>[], opciones?: { actualizarSaldos?: boolean }) => Promise<void>;
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
@@ -138,6 +141,11 @@ interface FinanceState {
 }
 
 const LOCAL_STORAGE_KEY = 'fintech_data_v2';
+const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
+
+function getScheduledTransferDestination(notas?: string) {
+  return notas?.match(/\[destino:([^\]]+)\]/)?.[1] || null;
+}
 
 const loadSavedData = () => {
   try {
@@ -580,6 +588,116 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     } catch (e) {
       console.warn('Registro local guardado');
     }
+  },
+
+  programarPagoTarjeta: async ({ origenId, destinoId, monto, fecha, descripcion }) => {
+    const { cuentas, movimientos } = get();
+    const origen = cuentas.find((cuenta) => cuenta.id === origenId);
+    const destino = cuentas.find((cuenta) => cuenta.id === destinoId);
+    if (!origen || !destino || origen.id === destino.id) throw new Error('Selecciona una cuenta bancaria y una tarjeta diferentes.');
+    if (origen.moneda !== destino.moneda || origen.moneda !== 'COP') throw new Error('El pago programado debe usar la misma moneda de la cuenta bancaria y la tarjeta.');
+    if (origen.tipo === 'tarjeta_credito' || destino.tipo !== 'tarjeta_credito') throw new Error('Selecciona una cuenta de origen y una tarjeta de crédito como destino.');
+    if (!countsTowardAvailableBalance(origen)) throw new Error('El Fondo Nacional del Ahorro no puede usarse como cuenta de origen para este pago.');
+    if (!Number.isFinite(monto) || monto <= 0) throw new Error('Ingresa un valor de extracto válido.');
+    const yaExiste = movimientos.some((movimiento) =>
+      movimiento.tipo === 'transferencia' &&
+      movimiento.notas?.startsWith(CARD_PAYMENT_MARKER) &&
+      movimiento.notas.includes(`[destino:${destinoId}]`) &&
+      movimiento.fecha.slice(0, 7) === fecha.slice(0, 7)
+    );
+    if (yaExiste) throw new Error('Ya existe un pago programado para esta tarjeta en este mes.');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para programar el pago de la tarjeta.');
+
+    const nuevoPago = {
+      user_id: session.user.id,
+      cuenta_id: origenId,
+      categoria_id: null,
+      tipo: 'transferencia' as const,
+      monto,
+      moneda: origen.moneda,
+      fecha,
+      descripcion,
+      estado: 'pendiente' as const,
+      es_recurrente: false,
+      notas: `${CARD_PAYMENT_MARKER}[destino:${destinoId}]`,
+    };
+    const { data, error } = await supabase.from('movimientos').insert([nuevoPago]).select('*').single();
+    if (error || !data) throw error || new Error('No se pudo programar el pago de la tarjeta.');
+
+    set((state) => ({ movimientos: [data as Movimiento, ...state.movimientos] }));
+    persistLocally(get());
+    get().calcularResumenes();
+  },
+
+  marcarPagoPendiente: async (id) => {
+    const { movimientos, cuentas } = get();
+    const movimiento = movimientos.find((item) => item.id === id);
+    if (!movimiento || movimiento.estado !== 'pendiente') throw new Error('Este pago ya no está pendiente. Actualiza la vista y vuelve a revisar.');
+
+    const origen = cuentas.find((cuenta) => cuenta.id === movimiento.cuenta_id);
+    if (!origen) throw new Error('No se encontró la cuenta asociada al pago.');
+
+    const deltas = new Map<string, number>();
+    if (movimiento.tipo === 'gasto') {
+      deltas.set(origen.id, -movimiento.monto);
+    } else if (movimiento.tipo === 'ingreso') {
+      deltas.set(origen.id, movimiento.monto);
+    } else {
+      if (!movimiento.notas?.startsWith(CARD_PAYMENT_MARKER)) throw new Error('Este movimiento no es un pago de tarjeta programado desde el calendario.');
+      const destinoId = getScheduledTransferDestination(movimiento.notas);
+      const destino = destinoId ? cuentas.find((cuenta) => cuenta.id === destinoId) : undefined;
+      if (!destino || destino.moneda !== origen.moneda) throw new Error('No se encontró la tarjeta vinculada a esta programación.');
+      deltas.set(origen.id, -movimiento.monto);
+      deltas.set(destino.id, movimiento.monto);
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para confirmar este pago.');
+
+    const accountUpdates = [...deltas.entries()].map(([accountId, delta]) => {
+      const account = cuentas.find((item) => item.id === accountId)!;
+      return { account, balance: account.saldo_actual + delta };
+    });
+    const { data: updatedMovement, error: movementError } = await supabase
+      .from('movimientos')
+      .update({ estado: 'completado' })
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .eq('estado', 'pendiente')
+      .select('id');
+    if (movementError) throw movementError;
+    if (!updatedMovement?.length) throw new Error('El pago cambió en otra sesión. Actualiza los datos e inténtalo de nuevo.');
+
+    const updatedAccounts: typeof accountUpdates = [];
+    try {
+      for (const update of accountUpdates) {
+        const { error } = await supabase
+          .from('cuentas')
+          .update({ saldo_actual: update.balance })
+          .eq('id', update.account.id)
+          .eq('user_id', session.user.id);
+        if (error) throw error;
+        updatedAccounts.push(update);
+      }
+    } catch (error) {
+      await Promise.all([
+        supabase.from('movimientos').update({ estado: 'pendiente' }).eq('id', id).eq('user_id', session.user.id),
+        ...updatedAccounts.map(({ account }) => supabase.from('cuentas').update({ saldo_actual: account.saldo_actual }).eq('id', account.id).eq('user_id', session.user.id)),
+      ]);
+      throw error;
+    }
+
+    set((state) => ({
+      movimientos: state.movimientos.map((item) => item.id === id ? { ...item, estado: 'completado' } : item),
+      cuentas: state.cuentas.map((account) => {
+        const update = accountUpdates.find((candidate) => candidate.account.id === account.id);
+        return update ? { ...account, saldo_actual: update.balance } : account;
+      }),
+    }));
+    persistLocally(get());
+    get().calcularResumenes();
   },
 
   importarMovimientos: async (nuevos, opciones) => {
