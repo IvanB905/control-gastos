@@ -7,7 +7,8 @@ const config: CapacitorConfig = {
   appName: 'Finanza',
   webDir: 'dist',
   ios: {
-    contentInset: 'automatic',
+    // Use CSS env(safe-area-inset-*) consistently with the app shell and bottom navigation.
+    contentInset: 'never',
   },
   server: {
     androidScheme: 'https',

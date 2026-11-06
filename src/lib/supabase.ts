@@ -7,4 +7,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Faltan las credenciales de Supabase en el archivo .env');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    flowType: 'pkce',
+  },
+});

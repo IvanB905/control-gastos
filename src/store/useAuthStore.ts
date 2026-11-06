@@ -1,6 +1,28 @@
 import { create } from 'zustand';
 import type { User, Session } from '@supabase/supabase-js';
+import { App } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
+import { Capacitor } from '@capacitor/core';
 import { supabase } from '../lib/supabase';
+
+const NATIVE_AUTH_CALLBACK = 'com.ivanb905.finanza://auth/callback';
+let authInitialization: Promise<void> | null = null;
+let authStateSubscription: { unsubscribe: () => void } | null = null;
+
+async function completeNativeOAuth(url: string) {
+  const callback = new URL(url);
+  if (callback.protocol !== 'com.ivanb905.finanza:' || callback.hostname !== 'auth' || callback.pathname !== '/callback') return;
+
+  try {
+    const code = callback.searchParams.get('code');
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) throw error;
+    }
+  } finally {
+    await Browser.close().catch(() => undefined);
+  }
+}
 
 interface AuthState {
   user: User | null;
@@ -23,27 +45,49 @@ export const useAuthStore = create<AuthState>((set) => ({
   setAuthModalOpen: (open) => set({ isAuthModalOpen: open }),
 
   initAuth: async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      set({ session, user: session?.user || null, isLoading: false });
+    if (authInitialization) return authInitialization;
+    authInitialization = (async () => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          await App.addListener('appUrlOpen', ({ url }) => void completeNativeOAuth(url).catch(() => undefined));
+          const launch = await App.getLaunchUrl();
+          if (launch?.url) await completeNativeOAuth(launch.url);
+        }
 
-      supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { session } } = await supabase.auth.getSession();
         set({ session, user: session?.user || null, isLoading: false });
-      });
-    } catch (e) {
-      set({ isLoading: false });
-    }
+
+        if (!authStateSubscription) {
+          const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+            set({ session: nextSession, user: nextSession?.user || null, isLoading: false });
+          });
+          authStateSubscription = data.subscription;
+        }
+      } catch {
+        set({ isLoading: false });
+        authInitialization = null;
+      }
+    })();
+    return authInitialization;
   },
 
   signInWithGoogle: async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const isNative = Capacitor.isNativePlatform();
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: isNative ? NATIVE_AUTH_CALLBACK : window.location.origin,
+          skipBrowserRedirect: isNative,
         },
       });
-      return { error: error as Error | null };
+      if (error) return { error: error as Error };
+
+      if (isNative) {
+        if (!data.url) return { error: new Error('No se pudo iniciar el acceso con Google.') };
+        await Browser.open({ url: data.url });
+      }
+      return { error: null };
     } catch (err) {
       return { error: err as Error };
     }
@@ -70,6 +114,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           data: {
             full_name: nombre,
           },
+          emailRedirectTo: Capacitor.isNativePlatform() ? NATIVE_AUTH_CALLBACK : undefined,
         },
       });
       return { error: error as Error | null };

@@ -46,7 +46,7 @@ export function App() {
 
   if (isAuthLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 text-sm text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400" role="status" aria-live="polite">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-zinc-50 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] text-sm text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400" role="status" aria-live="polite">
         Verificando sesión…
       </div>
     );
@@ -54,7 +54,7 @@ export function App() {
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-5 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-zinc-50 px-5 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
         <section className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-2xl" aria-hidden="true">🔒</div>
           <h1 className="text-xl font-semibold">Tus finanzas están protegidas</h1>
@@ -75,7 +75,7 @@ export function App() {
   }
 
   return (
-    <div className={`flex h-screen h-dvh min-w-0 w-full max-w-full overflow-hidden bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans antialiased transition-colors ${Capacitor.getPlatform() === 'android' ? 'pt-[var(--safe-area-inset-top,env(safe-area-inset-top))]' : ''}`}>
+    <div className={`flex h-screen h-dvh min-w-0 w-full max-w-full overflow-hidden bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans antialiased transition-colors ${Capacitor.isNativePlatform() ? 'pt-[var(--safe-area-inset-top,env(safe-area-inset-top))]' : ''}`}>
       {/* Sleek Sidebar */}
       <Sidebar />
 

@@ -7,7 +7,7 @@ La aplicación web se empaqueta con Capacitor para reutilizar React y Vite. La w
 - Capacitor 8 y sus complementos Android, iOS, App y Browser quedan configurados en `package.json`.
 - El identificador `com.ivanb905.finanza` es provisional. Definir el nombre e identificador finales antes de crear las fichas de tienda.
 - La app requiere conexión a internet para sincronizar con Supabase.
-- El flujo de OAuth con Google todavía necesita callback de deep link nativo y configuración de redirect URL en Supabase y Google.
+- El flujo nativo de Google usa PKCE y vuelve a `com.ivanb905.finanza://auth/callback`; esa URL debe añadirse a la lista de redirect URLs de Supabase. La URI HTTPS de callback de Supabase configurada como cliente OAuth en Google permanece igual.
 - Los recursos de icono vectoriales son para web/PWA. Para las tiendas se deben generar y revisar los tamaños PNG requeridos dentro de cada proyecto nativo.
 - Los proyectos nativos `android/` e `ios/` ya están generados y sincronizados con el build web.
 - Este equipo quedó usando Node.js 24.11.1, compatible con Capacitor 8.
@@ -39,6 +39,13 @@ npm run cap:ios
 ```
 
 Las futuras actualizaciones del frontend requieren `npm run build` y `npm run cap:sync` antes de compilar los binarios.
+
+### iPhone
+
+1. En Supabase, añade exactamente `com.ivanb905.finanza://auth/callback` a Authentication → URL Configuration → Redirect URLs.
+2. Desde macOS con Xcode 26 o posterior, ejecuta `npm install`, `npm run build`, `npx cap sync ios` y `npx cap open ios`; selecciona un equipo de firma para instalar en iPhone.
+3. En el iPhone, prueba acceso por correo y Google, persistencia de sesión, navegación, formularios, teclado, cámara/archivos si se usan y modo claro/oscuro.
+4. La app iOS no puede leer notificaciones de movimientos de otras apps; esa función sigue disponible solo en Android.
 
 ## Pendientes antes de distribuir
 
