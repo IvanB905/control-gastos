@@ -108,7 +108,7 @@ export const MovementsView: React.FC = () => {
             className="flex min-h-11 w-full items-center justify-center gap-1.5 px-2 sm:min-h-0 sm:w-auto sm:gap-2 sm:px-3.5 sm:py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-[11px] sm:text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-colors shadow-xs cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5 text-blue-500" />
-            <span>Importar CSV</span>
+            <span>Importar archivo</span>
           </button>
 
           <button

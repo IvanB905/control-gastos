@@ -55,7 +55,7 @@ function parseCsvLine(line: string, delimiter: string): string[] {
   return values;
 }
 
-function fingerprint(parts: string[]): string {
+export function fingerprintImport(parts: string[]): string {
   const input = parts.join('|').toLocaleLowerCase('es-CO');
   let hash = 2166136261;
   for (let index = 0; index < input.length; index += 1) {
@@ -115,7 +115,7 @@ export function parseBankCsv(content: string): ParsedImport {
       return;
     }
 
-    const key = fingerprint([date, sourceAccount, type, description, Math.abs(amount).toFixed(2), currency]);
+    const key = fingerprintImport([date, sourceAccount, type, description, Math.abs(amount).toFixed(2), currency]);
     const occurrence = (occurrenceByFingerprint.get(key) || 0) + 1;
     occurrenceByFingerprint.set(key, occurrence);
 

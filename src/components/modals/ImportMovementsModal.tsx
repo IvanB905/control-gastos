@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { AlertCircle, Check, FileUp, LoaderCircle, X } from 'lucide-react';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
-import { parseBankCsv, importMarker, type ImportRow } from '../../lib/bankCsv';
+import { importMarker, type ImportRow } from '../../lib/bankCsv';
+import { parseBankFile } from '../../lib/bankStatement';
 import type { Cuenta, Movimiento, TipoMoneda } from '../../types';
 
 interface ImportMovementsModalProps {
@@ -35,7 +36,7 @@ function findCategory(row: ImportRow, categories: ReturnType<typeof useFinanceSt
   if (suggestion.includes('mercado')) return includes(['mercado', 'alimentación', 'alimentacion', 'comida']);
   if (suggestion.includes('combustible')) return includes(['gasolina', 'transporte']);
   if (suggestion.includes('comida')) return includes(['alimentación', 'alimentacion', 'comida']);
-  if (suggestion.includes('servicios digitales')) return includes(['suscrip', 'entretenimiento', 'ocio']);
+  if (suggestion.includes('servicios digitales')) return includes(['servicios digitales', 'suscrip', 'entretenimiento', 'ocio']);
   if (suggestion.includes('telefonía')) return includes(['servicio', 'comunicación', 'comunicacion']);
   if (suggestion.includes('comisiones')) return includes(['comisión', 'comision', 'banco']);
   if (suggestion.includes('transporte')) return includes(['transporte']);
@@ -95,14 +96,14 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
     setSaveError('');
     setSavedCount(null);
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
+    if (file.size > 10 * 1024 * 1024) {
       setRows([]);
-      setErrors(['El archivo supera el límite de 2 MB.']);
+      setErrors(['El archivo supera el límite de 10 MB.']);
       return;
     }
 
     try {
-      const parsed = parseBankCsv(await file.text());
+      const parsed = await parseBankFile(file);
       setFileName(file.name);
       setRows(parsed.rows);
       setErrors(parsed.errors);
@@ -115,7 +116,7 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
       ));
     } catch {
       setRows([]);
-      setErrors(['No se pudo leer el archivo. Verifica que sea un CSV UTF-8 válido.']);
+      setErrors(['No se pudo leer el archivo. Verifica que sea un Excel o PDF válido descargado de Bancolombia.']);
     }
   };
 
@@ -177,7 +178,7 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
         <div className="flex items-start justify-between border-b border-zinc-100 p-5 dark:border-zinc-800">
           <div>
             <h2 id="import-title" className="text-lg font-bold text-zinc-900 dark:text-white">Importar extracto bancario</h2>
-            <p className="mt-1 text-xs text-zinc-500">Carga el CSV de movimientos y revisa las cuentas antes de guardarlo.</p>
+            <p className="mt-1 text-xs text-zinc-500">Carga el archivo descargado de Bancolombia. Se procesa en este dispositivo y podrás revisar los movimientos antes de guardarlos.</p>
           </div>
           <button onClick={onClose} aria-label="Cerrar" className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
             <X className="h-4 w-4" />
@@ -187,9 +188,9 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
         <div className="space-y-5 overflow-y-auto p-5">
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-5 py-7 text-center hover:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-900/60">
             <FileUp className="mb-2 h-6 w-6 text-emerald-600" />
-            <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Seleccionar archivo CSV</span>
-            <span className="mt-1 text-xs text-zinc-500">{fileName || 'UTF-8, máximo 2 MB'}</span>
-            <input type="file" accept=".csv,text/csv" onChange={handleFile} className="sr-only" />
+            <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Seleccionar PDF, Excel o CSV</span>
+            <span className="mt-1 text-xs text-zinc-500">{fileName || 'PDF, XLS, XLSX o CSV · máximo 10 MB'}</span>
+            <input type="file" accept=".pdf,.xls,.xlsx,.csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" onChange={handleFile} className="sr-only" />
           </label>
 
           {errors.length > 0 && (
