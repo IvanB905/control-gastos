@@ -11,9 +11,11 @@ import {
   Wallet,
   DollarSign,
   PencilLine,
+  RefreshCw,
 } from 'lucide-react';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { countsTowardAvailableBalance, formatCurrency, formatDate } from '../../lib/utils';
+import { importMarker } from '../../lib/bankCsv';
 import { AccountModal } from '../modals/AccountModal';
 import { TransferModal } from '../modals/TransferModal';
 import { UpdateAccountBalanceModal } from '../modals/UpdateAccountBalanceModal';
@@ -38,7 +40,7 @@ const getAccountIcon = (tipo: TipoCuenta) => {
 };
 
 export const AccountsView: React.FC = () => {
-  const { cuentas, movimientos, eliminarCuenta, consolidarCuentas } = useFinanceStore();
+  const { cuentas, movimientos, eliminarCuenta, consolidarCuentas, reconciliarSaldosImportados } = useFinanceStore();
 
   const [isAccountModalOpen, setAccountModalOpen] = useState(false);
   const [isTransferModalOpen, setTransferModalOpen] = useState(false);
@@ -46,6 +48,27 @@ export const AccountsView: React.FC = () => {
   const [cuentaParaActualizar, setCuentaParaActualizar] = useState<typeof cuentas[number] | null>(null);
   const [mergingCuentaId, setMergingCuentaId] = useState<string | null>(null);
   const [mergeMessage, setMergeMessage] = useState<string | null>(null);
+  const [isReconcilingBalances, setIsReconcilingBalances] = useState(false);
+  const importedMovementsToApply = movimientos.filter((movimiento) => {
+    if (!importMarker(movimiento.notas) || movimiento.estado !== 'completado') return false;
+    const cuenta = cuentas.find((item) => item.id === movimiento.cuenta_id);
+    return Boolean(cuenta?.saldo_fecha && movimiento.fecha > cuenta.saldo_fecha);
+  }).length;
+
+  const handleReconcileBalances = async () => {
+    setIsReconcilingBalances(true);
+    setMergeMessage(null);
+    try {
+      const result = await reconciliarSaldosImportados();
+      setMergeMessage(result.movimientosAplicados
+        ? `Saldos actualizados: se aplicaron ${result.movimientosAplicados} movimientos importados en ${result.cuentasActualizadas} cuentas. Cada saldo ahora corresponde a su última fecha de movimiento.`
+        : 'No hay movimientos importados nuevos después de las fechas de referencia de tus cuentas.');
+    } catch (error) {
+      setMergeMessage(error instanceof Error ? error.message : 'No se pudieron actualizar los saldos.');
+    } finally {
+      setIsReconcilingBalances(false);
+    }
+  };
 
   const movementCounts = new Map(cuentas.map((cuenta) => [
     cuenta.id,
@@ -144,6 +167,17 @@ export const AccountsView: React.FC = () => {
         <p role="status" className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-xs font-medium text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200">
           {mergeMessage}
         </p>
+      )}
+      {importedMovementsToApply > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-900 dark:bg-blue-950/30 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-blue-900 dark:text-blue-200">
+            Hay <strong>{importedMovementsToApply} movimientos importados</strong> posteriores a la fecha de referencia de sus cuentas. Aplícalos una sola vez para actualizar los saldos.
+          </p>
+          <button type="button" onClick={() => void handleReconcileBalances()} disabled={isReconcilingBalances} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-60">
+            <RefreshCw className={`h-3.5 w-3.5 ${isReconcilingBalances ? 'animate-spin' : ''}`} />
+            {isReconcilingBalances ? 'Actualizando…' : 'Actualizar saldos'}
+          </button>
+        </div>
       )}
 
       {/* Summary Stat Cards */}

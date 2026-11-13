@@ -2,6 +2,16 @@ import { create } from 'zustand';
 import type { Cuenta, Categoria, Movimiento, Presupuesto, MetaAhorro, ResumenMensual, TipoMoneda } from '../types';
 import { supabase } from '../lib/supabase';
 import { countsTowardAvailableBalance } from '../lib/utils';
+import { importMarker } from '../lib/bankCsv';
+
+function movementBalanceDelta(movement: Movimiento) {
+  if (movement.estado !== 'completado') return 0;
+  if (movement.tipo === 'ingreso') return movement.monto;
+  if (movement.tipo === 'gasto') return -movement.monto;
+  if (movement.notas?.includes('[flujo:salida]')) return -movement.monto;
+  if (movement.notas?.includes('[flujo:entrada]')) return movement.monto;
+  return 0;
+}
 
 // Configuración inicial basada en las cuentas informadas por el usuario.
 const DEFAULT_CUENTAS: Cuenta[] = [
@@ -126,6 +136,7 @@ interface FinanceState {
   marcarRecordatorioTarjetaUSD: (id: string) => Promise<void>;
   registrarMovimientoNotificacion: (movimiento: Omit<Movimiento, 'id' | 'created_at'>, notificationId: string, transfer?: { flow: 'entrada' | 'salida'; counterpartId?: string }) => Promise<void>;
   importarMovimientos: (movimientos: Omit<Movimiento, 'id' | 'created_at'>[], opciones?: { actualizarSaldos?: boolean }) => Promise<void>;
+  reconciliarSaldosImportados: () => Promise<{ movimientosAplicados: number; cuentasActualizadas: number }>;
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
   agregarCuenta: (cuenta: Omit<Cuenta, 'id' | 'created_at' | 'saldo_actual'>) => Promise<void>;
@@ -858,6 +869,64 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     get().calcularResumenes();
   },
 
+  reconciliarSaldosImportados: async () => {
+    const { cuentas, movimientos } = get();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para actualizar los saldos de tus cuentas.');
+
+    const cuentasPorId = new Map(cuentas.map((cuenta) => [cuenta.id, cuenta]));
+    const cambios = new Map<string, { delta: number; fecha: string; movimientos: number }>();
+    movimientos.forEach((movimiento) => {
+      const cuenta = cuentasPorId.get(movimiento.cuenta_id);
+      if (!importMarker(movimiento.notas) || movimiento.estado !== 'completado' || !cuenta?.saldo_fecha || movimiento.fecha <= cuenta.saldo_fecha) return;
+      const delta = movementBalanceDelta(movimiento);
+      if (!delta) return;
+      const actual = cambios.get(cuenta.id) || { delta: 0, fecha: cuenta.saldo_fecha, movimientos: 0 };
+      actual.delta += delta;
+      actual.fecha = movimiento.fecha > actual.fecha ? movimiento.fecha : actual.fecha;
+      actual.movimientos += 1;
+      cambios.set(cuenta.id, actual);
+    });
+
+    if (cambios.size === 0) return { movimientosAplicados: 0, cuentasActualizadas: 0 };
+    const actualizaciones = [...cambios.entries()].map(([id, cambio]) => {
+      const cuenta = cuentasPorId.get(id)!;
+      return { cuenta, saldo_actual: cuenta.saldo_actual + cambio.delta, saldo_fecha: cambio.fecha, ...cambio };
+    });
+    const guardadas: typeof actualizaciones = [];
+    try {
+      for (const actualizacion of actualizaciones) {
+        const { error } = await supabase.from('cuentas')
+          .update({ saldo_actual: actualizacion.saldo_actual, saldo_fecha: actualizacion.saldo_fecha })
+          .eq('id', actualizacion.cuenta.id)
+          .eq('user_id', session.user.id);
+        if (error) throw error;
+        guardadas.push(actualizacion);
+      }
+    } catch (error) {
+      await Promise.all(guardadas.map(({ cuenta }) => supabase.from('cuentas')
+        .update({ saldo_actual: cuenta.saldo_actual, saldo_fecha: cuenta.saldo_fecha || null })
+        .eq('id', cuenta.id).eq('user_id', session.user.id)));
+      throw error;
+    }
+
+    const fechasPorCuenta = new Map(actualizaciones.map((item) => [item.cuenta.id, item]));
+    set((state) => ({
+      cuentas: state.cuentas.map((cuenta) => {
+        const actualizacion = fechasPorCuenta.get(cuenta.id);
+        return actualizacion
+          ? { ...cuenta, saldo_actual: actualizacion.saldo_actual, saldo_fecha: actualizacion.saldo_fecha }
+          : cuenta;
+      }),
+    }));
+    get().calcularResumenes();
+    persistLocally(get());
+    return {
+      movimientosAplicados: actualizaciones.reduce((total, item) => total + item.movimientos, 0),
+      cuentasActualizadas: actualizaciones.length,
+    };
+  },
+
   importarMovimientos: async (nuevos, opciones) => {
     if (nuevos.length === 0) return;
 
@@ -865,7 +934,8 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     const fechaUltimaPorCuenta = new Map<string, string>();
     if (actualizarSaldos) {
       nuevos.forEach((movimiento) => {
-        if (movimiento.estado !== 'completado') return;
+        const cuenta = get().cuentas.find((item) => item.id === movimiento.cuenta_id);
+        if (movimiento.estado !== 'completado' || (cuenta?.saldo_fecha && movimiento.fecha <= cuenta.saldo_fecha)) return;
         const fechaActual = fechaUltimaPorCuenta.get(movimiento.cuenta_id) || '';
         if (movimiento.fecha > fechaActual) fechaUltimaPorCuenta.set(movimiento.cuenta_id, movimiento.fecha);
       });
@@ -875,17 +945,6 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
 
     if (session) {
       const cuentaIds = [...new Set(nuevos.map((movimiento) => movimiento.cuenta_id))];
-      let saldosAnteriores: { id: string; saldo_actual: number }[] = [];
-      if (!actualizarSaldos) {
-        const { data, error } = await supabase
-          .from('cuentas')
-          .select('id, saldo_actual')
-          .eq('user_id', session.user.id)
-          .in('id', cuentaIds);
-        if (error || !data) throw error || new Error('No se pudieron leer los saldos actuales.');
-        saldosAnteriores = data;
-      }
-
       const { data, error } = await supabase
         .from('movimientos')
         .insert(nuevos.map((movimiento) => ({ ...movimiento, user_id: session.user.id })))
@@ -895,38 +954,27 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       importados = data as Movimiento[];
 
       if (actualizarSaldos) {
-        const transferenciasPorCuenta = new Map<string, number>();
-        importados.forEach((movimiento) => {
-          if (movimiento.tipo !== 'transferencia') return;
-          const delta = movimiento.notas?.includes('[flujo:salida]')
-            ? -movimiento.monto
-            : movimiento.notas?.includes('[flujo:entrada]') ? movimiento.monto : 0;
-          transferenciasPorCuenta.set(movimiento.cuenta_id, (transferenciasPorCuenta.get(movimiento.cuenta_id) || 0) + delta);
-        });
-
-        for (const [cuentaId, delta] of transferenciasPorCuenta) {
-          if (!delta) continue;
+        for (const cuentaId of cuentaIds) {
           const { data: cuentaActual, error: readError } = await supabase
             .from('cuentas')
-            .select('saldo_actual')
+            .select('saldo_actual, saldo_fecha')
             .eq('id', cuentaId)
+            .eq('user_id', session.user.id)
             .single();
           if (readError || !cuentaActual) throw readError || new Error('No se pudo actualizar el saldo de la cuenta.');
+          const movimientosPosteriores = importados.filter((movimiento) => movimiento.cuenta_id === cuentaId
+            && movimiento.estado === 'completado' && movimiento.fecha > (cuentaActual.saldo_fecha || ''));
+          const delta = movimientosPosteriores.reduce((total, movimiento) => total + movementBalanceDelta(movimiento), 0);
+          const fechaSaldo = movimientosPosteriores.reduce((latest, movimiento) => movimiento.fecha > latest ? movimiento.fecha : latest, cuentaActual.saldo_fecha || '');
+          if (movimientosPosteriores.length === 0) continue;
           const { error: updateError } = await supabase
             .from('cuentas')
             .update({
               saldo_actual: Number(cuentaActual.saldo_actual) + delta,
-              ...(fechaUltimaPorCuenta.has(cuentaId) ? { saldo_fecha: fechaUltimaPorCuenta.get(cuentaId) } : {}),
+              saldo_fecha: fechaSaldo || null,
             })
-            .eq('id', cuentaId);
-          if (updateError) throw updateError;
-        }
-      } else {
-        for (const cuenta of saldosAnteriores) {
-          const { error: updateError } = await supabase
-            .from('cuentas')
-            .update({ saldo_actual: cuenta.saldo_actual })
-            .eq('id', cuenta.id);
+            .eq('id', cuentaId)
+            .eq('user_id', session.user.id);
           if (updateError) throw updateError;
         }
       }
@@ -941,21 +989,14 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       movimientos: [...importados, ...state.movimientos],
       cuentas: state.cuentas.map((cuenta) => {
         if (!actualizarSaldos) return cuenta;
-        const saldoDelta = importados.reduce((delta, movimiento) => {
-          if (movimiento.cuenta_id !== cuenta.id || movimiento.estado !== 'completado') return delta;
-          if (movimiento.tipo === 'ingreso') return delta + movimiento.monto;
-          if (movimiento.tipo === 'gasto') return delta - movimiento.monto;
-          if (movimiento.tipo === 'transferencia') {
-            if (movimiento.notas?.includes('[flujo:salida]')) return delta - movimiento.monto;
-            if (movimiento.notas?.includes('[flujo:entrada]')) return delta + movimiento.monto;
-          }
-          return delta;
-        }, 0);
+        const movimientosPosteriores = importados.filter((movimiento) => movimiento.cuenta_id === cuenta.id
+          && movimiento.estado === 'completado' && movimiento.fecha > (cuenta.saldo_fecha || ''));
+        const saldoDelta = movimientosPosteriores.reduce((delta, movimiento) => delta + movementBalanceDelta(movimiento), 0);
         const fechaImportada = fechaUltimaPorCuenta.get(cuenta.id);
         const saldoFecha = fechaImportada && fechaImportada > (cuenta.saldo_fecha || '')
           ? fechaImportada
           : cuenta.saldo_fecha;
-        return saldoDelta
+        return movimientosPosteriores.length > 0
           ? { ...cuenta, saldo_actual: cuenta.saldo_actual + saldoDelta, saldo_fecha: saldoFecha }
           : cuenta;
       }),

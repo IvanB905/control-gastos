@@ -62,7 +62,7 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [savedCount, setSavedCount] = useState<number | null>(null);
-  const [updateBalances, setUpdateBalances] = useState(false);
+  const [updateBalances, setUpdateBalances] = useState(true);
 
   const groups = useMemo<AccountGroup[]>(() => {
     const unique = new Map<string, AccountGroup>();
@@ -262,7 +262,7 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
 
               <label className="flex items-start gap-2 rounded-xl border border-zinc-200 p-3 text-xs dark:border-zinc-800">
                 <input type="checkbox" checked={updateBalances} onChange={(event) => setUpdateBalances(event.target.checked)} className="mt-0.5 accent-emerald-600" />
-                <span><strong className="text-zinc-800 dark:text-zinc-200">Actualizar saldos con estos movimientos.</strong> Actívalo solo si los saldos iniciales de las cuentas son los del comienzo del extracto. Si tus saldos ya son actuales, déjalo desmarcado.</span>
+                <span><strong className="text-zinc-800 dark:text-zinc-200">Actualizar saldos automáticamente.</strong> Solo aplica movimientos completados posteriores a la fecha de referencia de cada cuenta; los anteriores no se vuelven a sumar.</span>
               </label>
               <p className="text-[11px] leading-5 text-zinc-500">
                 Los pagos a tarjeta se guardan como transferencias vinculadas entre ambas cuentas, así no se duplican como gasto. Las transferencias a Nequi y los retiros se conservan como transferencias de salida.
