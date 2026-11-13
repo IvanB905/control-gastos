@@ -35,7 +35,9 @@ export const MovementsView: React.FC = () => {
   const [editingMovement, setEditingMovement] = useState<Movimiento | null>(null);
   const [isImportOpen, setImportOpen] = useState(false);
 
-  // Apply filters
+  // Apply filters, showing actual/past movements before future projections.
+  const now = new Date();
+  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const filteredMovimientos = movimientos.filter((m) => {
     const matchesSearch = m.descripcion.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesTipo = tipoFiltro === 'todos' || m.tipo === tipoFiltro;
@@ -45,7 +47,8 @@ export const MovementsView: React.FC = () => {
     const matchesMoneda = monedaFiltro === 'todas' || m.moneda === monedaFiltro;
 
     return matchesSearch && matchesTipo && matchesCuenta && matchesCategoria && matchesEstado && matchesMoneda;
-  }).sort((a, b) => b.fecha.localeCompare(a.fecha)
+  }).sort((a, b) => Number(a.fecha > today) - Number(b.fecha > today)
+    || b.fecha.localeCompare(a.fecha)
     || (b.created_at || '').localeCompare(a.created_at || '')
     || b.id.localeCompare(a.id));
 
