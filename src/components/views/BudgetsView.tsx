@@ -19,6 +19,7 @@ import { SavingsGoalModal } from '../modals/SavingsGoalModal';
 import { PaymentCalendar } from './PaymentCalendar';
 
 const normalizeText = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
 
 function getActualIncome(movements: Movimiento[], month: number, year: number, currency: string) {
   return movements.reduce((total, movement) => {
@@ -73,9 +74,18 @@ export const BudgetsView: React.FC = () => {
   const gastosPendientes = gastosDelMes
     .filter((movimiento) => movimiento.estado === 'pendiente')
     .reduce((total, movimiento) => total + movimiento.monto, 0);
+  const pagosTarjetaPendientes = movimientos
+    .filter((movimiento) => {
+      const [year, month] = movimiento.fecha.split('-').map(Number);
+      return movimiento.tipo === 'transferencia' && movimiento.estado === 'pendiente'
+        && movimiento.moneda === moneda && movimiento.notas?.startsWith(CARD_PAYMENT_MARKER)
+        && year === selectedYear && month === selectedMonth;
+    })
+    .reduce((total, movimiento) => total + movimiento.monto, 0);
+  const gastoSinCategoriaPresupuestada = Math.max(gastosPagados - totalGastado, 0);
   const porcentajeIngresoRecibido = ingresoPrevisto > 0 ? Math.min(Math.round((ingresosRecibidos / ingresoPrevisto) * 100), 100) : 0;
   const porcentajeIngresoLabel = ingresosRecibidos > 0 && porcentajeIngresoRecibido === 0 ? '<1%' : `${porcentajeIngresoRecibido}%`;
-  const porcentajeGastoConsumido = totalPresupuestado > 0 ? Math.min(Math.round((gastosPagados / totalPresupuestado) * 100), 100) : 0;
+  const porcentajeGastoConsumido = totalPresupuestado > 0 ? Math.min(Math.round((totalGastado / totalPresupuestado) * 100), 100) : 0;
 
   // Cálculos de metas
   const totalAhorradoMetas = metasFiltradas.reduce((acc, m) => acc + m.monto_actual, 0);
@@ -146,13 +156,13 @@ export const BudgetsView: React.FC = () => {
           <div className="rounded-xl border border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-800/30 p-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Gastos</span>
-              <span className={`text-[10px] font-semibold ${gastosPagados > totalPresupuestado ? 'text-rose-500' : 'text-zinc-400'}`}>
+              <span className={`text-[10px] font-semibold ${totalGastado > totalPresupuestado ? 'text-rose-500' : 'text-zinc-400'}`}>
                 {totalPresupuestado > 0 ? `${porcentajeGastoConsumido}% del presupuesto usado` : 'Fija presupuestos por categoría'}
               </span>
             </div>
             {totalPresupuestado > 0 ? (
-              <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden" role="progressbar" aria-label="Porcentaje del presupuesto de gastos consumido" aria-valuemin={0} aria-valuemax={100} aria-valuenow={porcentajeGastoConsumido}>
-                <div className={`h-full rounded-full transition-all ${gastosPagados > totalPresupuestado ? 'bg-rose-500' : 'bg-amber-500'}`} style={{ width: `${porcentajeGastoConsumido}%` }} />
+              <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden" role="progressbar" aria-label="Porcentaje del presupuesto por categorías consumido" aria-valuemin={0} aria-valuemax={100} aria-valuenow={porcentajeGastoConsumido}>
+                <div className={`h-full rounded-full transition-all ${totalGastado > totalPresupuestado ? 'bg-rose-500' : 'bg-amber-500'}`} style={{ width: `${porcentajeGastoConsumido}%` }} />
               </div>
             ) : (
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Aún no has fijado un límite de gasto para comparar.</p>
@@ -161,7 +171,9 @@ export const BudgetsView: React.FC = () => {
               <div><span className="block text-zinc-400">Límite presupuestado</span><strong className="text-zinc-900 dark:text-white">{formatCurrency(totalPresupuestado, moneda)}</strong></div>
               <div><span className="block text-zinc-400">Gastos pagados</span><strong className="text-rose-600 dark:text-rose-400">{formatCurrency(gastosPagados, moneda)}</strong></div>
             </div>
-            <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Pendiente por pagar: <strong>{formatCurrency(gastosPendientes, moneda)}</strong></p>
+            {gastoSinCategoriaPresupuestada > 0 && <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Gasto sin categoría presupuestada: <strong>{formatCurrency(gastoSinCategoriaPresupuestada, moneda)}</strong></p>}
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Pendiente por pagar (gastos): <strong>{formatCurrency(gastosPendientes, moneda)}</strong></p>
+            {pagosTarjetaPendientes > 0 && <p className="text-[11px] text-blue-700 dark:text-blue-300">Pago de tarjeta programado (transferencia): <strong>{formatCurrency(pagosTarjetaPendientes, moneda)}</strong>. Se suma a “Por pagar” del inicio, pero no se cuenta como gasto.</p>}
           </div>
         </div>
         <p className="text-[10px] leading-4 text-zinc-400">Los ingresos recibidos suman movimientos completados y excluyen desembolsos de créditos. Los gastos presupuestados suman tus límites por categoría; las transferencias no se cuentan como gasto.</p>
@@ -182,7 +194,7 @@ export const BudgetsView: React.FC = () => {
 
         <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
           <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
-            Total Gastado
+          Gastado en categorías presupuestadas
           </span>
           <span className="text-base sm:text-xl font-bold text-rose-600 dark:text-rose-400 block mt-1 truncate">
             {formatCurrency(totalGastado, moneda)}
