@@ -535,18 +535,33 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       ));
 
       if (localDataNeedsSync) {
-        const local = get();
-        const synced = await syncLocalDataToCloud(userId, {
-          cuentas: local.cuentas,
-          categorias: local.categorias,
-          movimientos: local.movimientos,
-          presupuestos: local.presupuestos,
-        });
-        set({ ...synced, syncError: null });
-        get().calcularResumenes();
-        persistLocally(get());
-        set({ isLoading: false });
-        return;
+        // Only migrate browser-only data into a brand-new cloud profile. Re-running
+        // this merge on every load can restore cloud rows the user already deleted.
+        const [cloudAccounts, cloudCategories, cloudMovements, cloudBudgets] = await Promise.all([
+          supabase.from('cuentas').select('id').eq('user_id', userId).limit(1),
+          supabase.from('categorias').select('id').eq('user_id', userId).limit(1),
+          supabase.from('movimientos').select('id').eq('user_id', userId).limit(1),
+          supabase.from('presupuestos').select('id').eq('user_id', userId).limit(1),
+        ]);
+        const migrationCheckError = [cloudAccounts.error, cloudCategories.error, cloudMovements.error, cloudBudgets.error].find(Boolean);
+        if (migrationCheckError) throw migrationCheckError;
+        const cloudProfileHasData = [cloudAccounts.data, cloudCategories.data, cloudMovements.data, cloudBudgets.data]
+          .some((rows) => (rows?.length || 0) > 0);
+
+        if (!cloudProfileHasData) {
+          const local = get();
+          const synced = await syncLocalDataToCloud(userId, {
+            cuentas: local.cuentas,
+            categorias: local.categorias,
+            movimientos: local.movimientos,
+            presupuestos: local.presupuestos,
+          });
+          set({ ...synced, syncError: null });
+          get().calcularResumenes();
+          persistLocally(get());
+          set({ isLoading: false });
+          return;
+        }
       }
 
       const [resCuentas, resCategorias, resMovimientos, resPresupuestos] = await Promise.all([
@@ -1022,6 +1037,43 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
 
   eliminarMovimiento: async (id) => {
     const deletedMovement = get().movimientos.find((movement) => movement.id === id);
+    if (!deletedMovement) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const { data: deletedRows, error: deleteError } = await supabase.from('movimientos')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', session.user.id)
+        .select('id');
+      if (deleteError) throw deleteError;
+
+      // Local migrations can assign a different id to an existing cloud row.
+      // Match the exact transaction before considering the deletion complete.
+      if (!deletedRows?.length) {
+        const { data: matches, error: matchError } = await supabase.from('movimientos')
+          .select('id')
+          .eq('user_id', session.user.id)
+          .eq('cuenta_id', deletedMovement.cuenta_id)
+          .eq('fecha', deletedMovement.fecha)
+          .eq('tipo', deletedMovement.tipo)
+          .eq('monto', deletedMovement.monto)
+          .eq('moneda', deletedMovement.moneda)
+          .eq('estado', deletedMovement.estado)
+          .eq('descripcion', deletedMovement.descripcion)
+          .limit(1);
+        if (matchError) throw matchError;
+        if (matches?.[0]) {
+          const { data: fallbackDeleted, error: fallbackError } = await supabase.from('movimientos')
+            .delete()
+            .eq('id', matches[0].id)
+            .eq('user_id', session.user.id)
+            .select('id');
+          if (fallbackError) throw fallbackError;
+          if (!fallbackDeleted?.length) throw new Error('No se pudo confirmar la eliminación del movimiento en la nube.');
+        }
+      }
+    }
+
     const transferDeltas = new Map<string, number>();
     if (deletedMovement?.notification_id && deletedMovement.tipo === 'transferencia' && deletedMovement.estado === 'completado') {
       const flowDelta = deletedMovement.notas?.includes('[flujo:entrada]') ? deletedMovement.monto : -deletedMovement.monto;
@@ -1045,10 +1097,6 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     }));
     get().calcularResumenes();
     persistLocally(get());
-
-    try {
-      await supabase.from('movimientos').delete().eq('id', id);
-    } catch (e) {}
   },
 
   agregarCuenta: async (cuenta) => {

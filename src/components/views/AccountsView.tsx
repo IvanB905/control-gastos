@@ -125,9 +125,14 @@ export const AccountsView: React.FC = () => {
     .filter((c) => c.moneda === 'USD' && (c.tipo === 'tarjeta_credito' || c.tipo === 'credito_libre_inversion'))
     .reduce((acc, c) => acc + Math.abs(c.saldo_actual), 0);
 
-  const movimientosCuenta = selectedCuentaId
+  const now = new Date();
+  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const movimientosCuenta = (selectedCuentaId
     ? movimientos.filter((m) => m.cuenta_id === selectedCuentaId)
-    : movimientos;
+    : movimientos).sort((a, b) => Number(a.fecha > today) - Number(b.fecha > today)
+      || b.fecha.localeCompare(a.fecha)
+      || (b.created_at || '').localeCompare(a.created_at || '')
+      || b.id.localeCompare(a.id));
 
   const selectedCuenta = cuentas.find((c) => c.id === selectedCuentaId);
 

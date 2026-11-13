@@ -14,6 +14,7 @@ export const RecentTransactions: React.FC = () => {
   const { movimientos, categorias, cuentas, eliminarMovimiento } = useFinanceStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<TipoMovimiento | 'todos'>('todos');
+  const [actionError, setActionError] = useState('');
 
   const now = new Date();
   const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -89,6 +90,7 @@ export const RecentTransactions: React.FC = () => {
       </div>
 
       {/* Transactions List */}
+      {actionError && <p role="alert" className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{actionError}</p>}
       {filteredMovimientos.length === 0 ? (
         <div className="py-12 text-center text-zinc-400 dark:text-zinc-500 text-xs">
           No hay movimientos que coincidan con la búsqueda.
@@ -153,7 +155,10 @@ export const RecentTransactions: React.FC = () => {
                   </span>
 
                   <button
-                    onClick={() => eliminarMovimiento(m.id)}
+                    onClick={() => {
+                      setActionError('');
+                      void eliminarMovimiento(m.id).catch((error) => setActionError(error instanceof Error ? error.message : 'No se pudo eliminar el movimiento.'));
+                    }}
                     className="p-1.5 text-zinc-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
                     title="Eliminar movimiento"
                   >

@@ -30,6 +30,7 @@ export const MovementsView: React.FC = () => {
   const [categoriaFiltro, setCategoriaFiltro] = useState<string>('todas');
   const [estadoFiltro, setEstadoFiltro] = useState<EstadoMovimiento | 'todos'>('todos');
   const [monedaFiltro, setMonedaFiltro] = useState<'todas' | 'COP' | 'USD'>('todas');
+  const [actionError, setActionError] = useState('');
 
   // Edit modal state
   const [editingMovement, setEditingMovement] = useState<Movimiento | null>(null);
@@ -212,6 +213,8 @@ export const MovementsView: React.FC = () => {
         </div>
       </div>
 
+      {actionError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{actionError}</p>}
+
       {/* Movements Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl shadow-xs overflow-hidden">
         {filteredMovimientos.length === 0 ? (
@@ -316,7 +319,10 @@ export const MovementsView: React.FC = () => {
                       </button>
 
                       <button
-                        onClick={() => eliminarMovimiento(m.id)}
+                        onClick={() => {
+                          setActionError('');
+                          void eliminarMovimiento(m.id).catch((error) => setActionError(error instanceof Error ? error.message : 'No se pudo eliminar el movimiento.'));
+                        }}
                         className="flex min-h-10 min-w-10 items-center justify-center p-1.5 text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
                         title="Eliminar movimiento"
                       >
