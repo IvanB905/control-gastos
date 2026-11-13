@@ -4,13 +4,22 @@ import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
 import { formatCurrency } from '../../lib/utils';
 
+const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
+const USD_CARD_REMINDER_MARKER = '[recordatorio-pago-tarjeta-usd]';
+
 export const KpiCards: React.FC = () => {
   const { movimientos } = useFinanceStore();
   const { moneda, selectedMonth, selectedYear } = useAppStore();
 
   const resumen = movimientos.reduce((totals, movimiento) => {
     const [year, month] = movimiento.fecha.split('-').map(Number);
-    if (year !== selectedYear || month !== selectedMonth || movimiento.moneda !== moneda || movimiento.tipo === 'transferencia') {
+    if (year !== selectedYear || month !== selectedMonth || movimiento.moneda !== moneda) {
+      return totals;
+    }
+    if (movimiento.tipo === 'transferencia') {
+      if (movimiento.estado === 'pendiente' && (movimiento.notas?.startsWith(CARD_PAYMENT_MARKER) || movimiento.notas?.startsWith(USD_CARD_REMINDER_MARKER))) {
+        totals.gastos_pendientes += movimiento.monto;
+      }
       return totals;
     }
     if (movimiento.tipo === 'ingreso' && movimiento.estado === 'completado') totals.total_ingresos += movimiento.monto;

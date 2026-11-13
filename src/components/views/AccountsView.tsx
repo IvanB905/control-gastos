@@ -94,8 +94,12 @@ export const AccountsView: React.FC = () => {
     .filter((c) => c.moneda === 'USD' && countsTowardAvailableBalance(c))
     .reduce((acc, c) => acc + c.saldo_actual, 0);
 
-  const deudaTotal = cuentas
-    .filter((c) => c.tipo === 'tarjeta_credito' || c.tipo === 'credito_libre_inversion')
+  const deudaCOP = cuentas
+    .filter((c) => c.moneda === 'COP' && (c.tipo === 'tarjeta_credito' || c.tipo === 'credito_libre_inversion'))
+    .reduce((acc, c) => acc + Math.abs(c.saldo_actual), 0);
+
+  const deudaUSD = cuentas
+    .filter((c) => c.moneda === 'USD' && (c.tipo === 'tarjeta_credito' || c.tipo === 'credito_libre_inversion'))
     .reduce((acc, c) => acc + Math.abs(c.saldo_actual), 0);
 
   const movimientosCuenta = selectedCuentaId
@@ -143,7 +147,7 @@ export const AccountsView: React.FC = () => {
       )}
 
       {/* Summary Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
         <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
           <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
             Disponible (COP)
@@ -162,12 +166,21 @@ export const AccountsView: React.FC = () => {
           </span>
         </div>
 
-        <div className="col-span-2 sm:col-span-1 p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
           <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
-            Deuda Total (COP)
+            Deuda (COP)
           </span>
           <span className="text-base sm:text-xl font-bold text-rose-600 dark:text-rose-400 block mt-1 truncate">
-            {formatCurrency(deudaTotal, 'COP')}
+            {formatCurrency(deudaCOP, 'COP')}
+          </span>
+        </div>
+
+        <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+          <span className="text-[10px] sm:text-[11px] font-semibold text-zinc-400 uppercase tracking-wider block truncate">
+            Deuda (USD)
+          </span>
+          <span className="text-base sm:text-xl font-bold text-rose-600 dark:text-rose-400 block mt-1 truncate">
+            {formatCurrency(deudaUSD, 'USD')}
           </span>
         </div>
       </div>

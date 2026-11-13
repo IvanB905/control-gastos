@@ -5,6 +5,7 @@ import { formatCurrency, formatDate, countsTowardAvailableBalance } from '../../
 import type { Movimiento } from '../../types';
 
 const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
+const USD_CARD_REMINDER_MARKER = '[recordatorio-pago-tarjeta-usd]';
 
 function getDestinationId(notas?: string) {
   return notas?.match(/\[destino:([^\]]+)\]/)?.[1] || null;
@@ -28,24 +29,39 @@ function getDueStatus(date: string, today: Date, completed: boolean) {
 }
 
 export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ month, year }) => {
-  const { cuentas, movimientos, marcarPagoPendiente, programarPagoTarjeta } = useFinanceStore();
+  const { cuentas, movimientos, marcarPagoPendiente, programarPagoTarjeta, programarRecordatorioTarjetaUSD, marcarRecordatorioTarjetaUSD } = useFinanceStore();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [usdAmounts, setUsdAmounts] = useState<Record<string, string>>({});
   const [sources, setSources] = useState<Record<string, string>>({});
+  const [dates, setDates] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const today = new Date();
   const { start, end } = monthBounds(year, month);
   const copCards = cuentas.filter((account) => account.tipo === 'tarjeta_credito' && account.moneda === 'COP');
+  const usdCards = cuentas.filter((account) => account.tipo === 'tarjeta_credito' && account.moneda === 'USD');
   const liquidAccounts = cuentas.filter((account) => account.moneda === 'COP' && account.tipo !== 'tarjeta_credito' && countsTowardAvailableBalance(account));
 
   const items = useMemo(() => movimientos
     .filter((movement) => movement.fecha >= start && movement.fecha <= end && (
-      movement.tipo === 'gasto' || (movement.tipo === 'transferencia' && movement.notas?.startsWith(CARD_PAYMENT_MARKER))
+      movement.tipo === 'gasto' || (movement.tipo === 'transferencia' && (movement.notas?.startsWith(CARD_PAYMENT_MARKER) || movement.notas?.startsWith(USD_CARD_REMINDER_MARKER)))
     ))
     .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.descripcion.localeCompare(b.descripcion)), [movimientos, start, end]);
 
+  const oldMinimumFor = (cardId: string) => {
+    const card = cuentas.find((account) => account.id === cardId);
+    return movimientos.find((movement) => movement.estado === 'pendiente'
+      && movement.tipo === 'gasto'
+      && movement.descripcion.startsWith(`Pago mínimo tarjeta ${card?.nombre || ''}`)
+      && movement.moneda === 'COP'
+      && movement.fecha.slice(0, 7) === `${year}-${String(month).padStart(2, '0')}`);
+  };
+
+  const amountFor = (cardId: string) => amounts[cardId] || oldMinimumFor(cardId)?.monto.toString() || '';
+  const usdAmountFor = (card: typeof usdCards[number]) => usdAmounts[card.id] || '';
+
   const handleSchedule = async (card: typeof copCards[number]) => {
-    const amount = Number(amounts[card.id]);
+    const amount = Number(amountFor(card.id));
     const sourceId = sources[card.id] || liquidAccounts[0]?.id;
     if (!Number.isFinite(amount) || amount <= 0) { setError('Ingresa el valor COP del extracto de la tarjeta.'); return; }
     if (!sourceId) { setError('No hay una cuenta líquida en COP para registrar el origen del pago.'); return; }
@@ -56,12 +72,30 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
         origenId: sourceId,
         destinoId: card.id,
         monto: amount,
-        fecha: `${year}-${String(month).padStart(2, '0')}-18`,
+        fecha: dateFor(card.id),
         descripcion: `Pago tarjeta ${card.nombre} (extracto ${String(month).padStart(2, '0')}/${year})`,
       });
       setAmounts((current) => ({ ...current, [card.id]: '' }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudo guardar la programación.');
+    } finally { setBusyId(null); }
+  };
+
+  const handleScheduleUSDReminder = async (card: typeof usdCards[number]) => {
+    const amount = Number(usdAmountFor(card));
+    if (!Number.isFinite(amount) || amount <= 0) { setError('Ingresa el valor mínimo en USD indicado por el extracto.'); return; }
+    setBusyId(card.id);
+    setError(null);
+    try {
+      await programarRecordatorioTarjetaUSD({
+        cuentaId: card.id,
+        monto: amount,
+        fecha: dateFor(card.id),
+        descripcion: `Recordatorio mínimo USD ${card.nombre}`,
+      });
+      setUsdAmounts((current) => ({ ...current, [card.id]: '' }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudo guardar el recordatorio en USD.');
     } finally { setBusyId(null); }
   };
 
@@ -73,9 +107,35 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
     finally { setBusyId(null); }
   };
 
+  const handleDismissUSDReminder = async (movement: Movimiento) => {
+    setBusyId(movement.id);
+    setError(null);
+    try { await marcarRecordatorioTarjetaUSD(movement.id); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'No se pudo actualizar el recordatorio.'); }
+    finally { setBusyId(null); }
+  };
+
   const monthHasCardPayment = (cardId: string) => items.some((movement) =>
-    movement.tipo === 'transferencia' && getDestinationId(movement.notas) === cardId
+    movement.tipo === 'transferencia' && movement.notas?.startsWith(CARD_PAYMENT_MARKER) && getDestinationId(movement.notas) === cardId
   );
+
+  const monthHasUSDReminder = (cardId: string) => items.some((movement) =>
+    movement.tipo === 'transferencia' && movement.notas?.startsWith(USD_CARD_REMINDER_MARKER) && getDestinationId(movement.notas) === cardId
+  );
+
+  const dateFor = (cardId: string) => {
+    if (dates[cardId]) return dates[cardId];
+    const savedCardMinimum = movimientos.find((movement) => movement.estado === 'pendiente'
+      && movement.tipo === 'gasto'
+      && movement.descripcion.startsWith('Pago mínimo tarjeta ')
+      && movement.fecha.slice(0, 7) === `${year}-${String(month).padStart(2, '0')}`);
+    const dueText = savedCardMinimum?.descripcion.match(/\bvence\s+(\d{1,2})\s+([a-záéíóú]+)/i);
+    const monthNumbers: Record<string, number> = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, oct: 10, nov: 11, dic: 12 };
+    const dueDay = dueText?.[1] ? Number(dueText[1]) : 18;
+    const dueMonth = dueText?.[2] ? monthNumbers[dueText[2].slice(0, 3).toLowerCase()] : month;
+    const statementDueDay = dueMonth === month && dueDay >= 1 && dueDay <= new Date(year, month, 0).getDate() ? dueDay : 18;
+    return `${year}-${String(month).padStart(2, '0')}-${String(statementDueDay).padStart(2, '0')}`;
+  };
 
   return (
     <section aria-labelledby="payment-calendar-title" className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
@@ -97,13 +157,15 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-zinc-900 dark:text-white">{card.nombre}</p>
-                <span className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300">Vence el 18</span>
+                <span className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300">Vence {dateFor(card.id).slice(-2)} de {new Date(year, month - 1, 1).toLocaleDateString('es-CO', { month: 'long' })}</span>
               </div>
               {existing ? <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">Pago del extracto registrado para este mes. Revisa su estado en la lista.</p> : <>
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Confirma el valor COP del extracto antes de programar el pago.</p>
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Registra el mínimo o el valor del extracto. Quedará como transferencia pendiente.</p>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2">
                   <label className="sr-only" htmlFor={`card-amount-${card.id}`}>Valor del extracto</label>
-                  <input id={`card-amount-${card.id}`} inputMode="decimal" type="number" min="1" step="1" value={amounts[card.id] || ''} onChange={(event) => setAmounts((current) => ({ ...current, [card.id]: event.target.value }))} placeholder="Valor del extracto (COP)" className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
+                  <input id={`card-amount-${card.id}`} inputMode="decimal" type="number" min="1" step="1" value={amountFor(card.id)} onChange={(event) => setAmounts((current) => ({ ...current, [card.id]: event.target.value }))} placeholder="Valor del extracto (COP)" className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
+                  <label className="sr-only" htmlFor={`card-date-${card.id}`}>Fecha límite de pago</label>
+                  <input id={`card-date-${card.id}`} type="date" min={start} max={end} value={dateFor(card.id)} onChange={(event) => setDates((current) => ({ ...current, [card.id]: event.target.value }))} className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
                   <label className="sr-only" htmlFor={`card-source-${card.id}`}>Cuenta de origen</label>
                   <select id={`card-source-${card.id}`} value={sources[card.id] || liquidAccounts[0]?.id || ''} onChange={(event) => setSources((current) => ({ ...current, [card.id]: event.target.value }))} className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" disabled={liquidAccounts.length === 0}>
                     {liquidAccounts.map((account) => <option key={account.id} value={account.id}>{account.nombre}</option>)}
@@ -118,12 +180,42 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
         </div>;
       })}
 
-      {items.length === 0 ? <p className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-8 text-center text-xs text-zinc-500">No hay pagos registrados para este mes. Las cuentas FNA y de crédito no se ofrecen como origen de pago.</p> : <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      {usdCards.map((card) => {
+        const existing = monthHasUSDReminder(card.id);
+        return <div key={card.id} className="rounded-xl border border-blue-100 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/20 p-4">
+          <div className="flex items-start gap-3">
+            <CreditCard className="w-4 h-4 mt-0.5 text-blue-500" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-zinc-900 dark:text-white">{card.nombre}</p>
+                <span className="text-[11px] font-medium text-blue-700 dark:text-blue-300">Vence {dateFor(card.id).slice(-2)} de {new Date(year, month - 1, 1).toLocaleDateString('es-CO', { month: 'long' })}</span>
+              </div>
+              {existing ? <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">Recordatorio USD registrado. Solo avisa del vencimiento; no modifica los saldos.</p> : <>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Recordatorio del mínimo en dólares. No se convierte a COP ni se descuenta de una cuenta.</p>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                  <label className="sr-only" htmlFor={`usd-card-amount-${card.id}`}>Pago mínimo en USD</label>
+                  <input id={`usd-card-amount-${card.id}`} inputMode="decimal" type="number" min="0.01" step="0.01" value={usdAmountFor(card)} onChange={(event) => setUsdAmounts((current) => ({ ...current, [card.id]: event.target.value }))} placeholder="Mínimo (USD)" className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
+                  <label className="sr-only" htmlFor={`usd-card-date-${card.id}`}>Fecha límite del mínimo en USD</label>
+                  <input id={`usd-card-date-${card.id}`} type="date" min={start} max={end} value={dateFor(card.id)} onChange={(event) => setDates((current) => ({ ...current, [card.id]: event.target.value }))} className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
+                  <button type="button" onClick={() => void handleScheduleUSDReminder(card)} disabled={busyId === card.id} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
+                    <RefreshCw className={`w-3.5 h-3.5 ${busyId === card.id ? 'animate-spin' : ''}`} /> Guardar aviso
+                  </button>
+                </div>
+              </>}
+            </div>
+          </div>
+        </div>;
+      })}
+
+      {items.length === 0 ? <p className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-8 text-center text-xs text-zinc-500">No hay pagos registrados para este mes. El pago COP se agenda como transferencia y el mínimo USD queda como recordatorio separado.</p> : <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {items.map((movement) => {
           const status = getDueStatus(movement.fecha, today, movement.estado === 'completado');
           const StatusIcon = status.Icon;
           const destination = movement.tipo === 'transferencia' ? cuentas.find((account) => account.id === getDestinationId(movement.notas)) : undefined;
-          const label = movement.tipo === 'transferencia' ? `Pago tarjeta · ${destination?.nombre || 'Tarjeta'}` : movement.descripcion;
+          const isUSDReminder = movement.notas?.startsWith(USD_CARD_REMINDER_MARKER);
+          const label = isUSDReminder
+            ? `Recordatorio mínimo USD · ${destination?.nombre || 'Tarjeta'}`
+            : movement.tipo === 'transferencia' ? `Pago tarjeta · ${destination?.nombre || 'Tarjeta'}` : movement.descripcion;
           return <article key={movement.id} className="flex flex-col sm:flex-row sm:items-center gap-3 py-3 first:pt-0 last:pb-0">
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <span className="w-10 shrink-0 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-1.5 py-2 text-center text-[10px] font-bold text-zinc-600 dark:text-zinc-300">{movement.fecha.slice(8, 10)}</span>
@@ -135,7 +227,9 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
             <div className="flex items-center justify-between sm:justify-end gap-3 pl-[52px] sm:pl-0">
               <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{formatCurrency(movement.monto, movement.moneda)}</span>
               <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold whitespace-nowrap ${status.className}`}><StatusIcon className="w-3 h-3" />{status.label}</span>
-              {movement.estado === 'pendiente' && <button type="button" onClick={() => void handleMarkPaid(movement)} disabled={busyId === movement.id} className="rounded-lg border border-emerald-200 dark:border-emerald-900 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50">{busyId === movement.id ? 'Guardando…' : 'Marcar pagado'}</button>}
+              {movement.estado === 'pendiente' && (isUSDReminder
+                ? <button type="button" onClick={() => void handleDismissUSDReminder(movement)} disabled={busyId === movement.id} className="rounded-lg border border-blue-200 dark:border-blue-900 px-2.5 py-1.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 disabled:opacity-50">{busyId === movement.id ? 'Guardando…' : 'Marcar atendido'}</button>
+                : <button type="button" onClick={() => void handleMarkPaid(movement)} disabled={busyId === movement.id} className="rounded-lg border border-emerald-200 dark:border-emerald-900 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50">{busyId === movement.id ? 'Guardando…' : 'Marcar pagado'}</button>)}
             </div>
           </article>;
         })}

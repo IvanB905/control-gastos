@@ -21,6 +21,9 @@ export function getMonthMovements(movements: Movimiento[], month: number, year: 
   });
 }
 
+const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
+const USD_CARD_REMINDER_MARKER = '[recordatorio-pago-tarjeta-usd]';
+
 export function calculateMonthlyPlan(
   accounts: Cuenta[],
   goals: MetaAhorro[],
@@ -29,7 +32,11 @@ export function calculateMonthlyPlan(
   year: number,
   currency: TipoMoneda,
 ): MonthlyPlan {
-  const items = getMonthMovements(movements, month, year, currency);
+  const monthlyMovements = movements.filter((movement) => {
+    const [movementYear, movementMonth] = movement.fecha.split('-').map(Number);
+    return movementYear === year && movementMonth === month && movement.moneda === currency;
+  });
+  const items = monthlyMovements.filter((movement) => movement.tipo !== 'transferencia');
   const estimatedIncome = accounts
     .filter((account) => account.moneda === currency && account.tipo === 'banco')
     .reduce((sum, account) => sum + (account.ingreso_mensual_estimado || 0), 0);
@@ -39,9 +46,14 @@ export function calculateMonthlyPlan(
   const paidExpenses = items
     .filter((movement) => movement.tipo === 'gasto' && movement.estado === 'completado')
     .reduce((sum, movement) => sum + movement.monto, 0);
-  const pendingExpenses = items
+  const pendingExpenses = monthlyMovements
     .filter((movement) => movement.tipo === 'gasto' && movement.estado === 'pendiente')
-    .reduce((sum, movement) => sum + movement.monto, 0);
+    .reduce((sum, movement) => sum + movement.monto, 0)
+    + monthlyMovements
+      .filter((movement) => movement.tipo === 'transferencia'
+        && movement.estado === 'pendiente'
+        && (movement.notas?.startsWith(CARD_PAYMENT_MARKER) || movement.notas?.startsWith(USD_CARD_REMINDER_MARKER)))
+      .reduce((sum, movement) => sum + movement.monto, 0);
 
   const fnaAccounts = accounts.filter((account) => account.tipo === 'ahorro'
     && /fna|fondo nacional del ahorro/.test(normalizeFinanceText(account.nombre))

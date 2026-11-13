@@ -120,7 +120,9 @@ interface FinanceState {
   cargarDatos: () => Promise<void>;
   agregarMovimiento: (movimiento: Omit<Movimiento, 'id' | 'created_at'>) => Promise<void>;
   programarPagoTarjeta: (datos: { origenId: string; destinoId: string; monto: number; fecha: string; descripcion: string }) => Promise<void>;
+  programarRecordatorioTarjetaUSD: (datos: { cuentaId: string; monto: number; fecha: string; descripcion: string }) => Promise<void>;
   marcarPagoPendiente: (id: string) => Promise<void>;
+  marcarRecordatorioTarjetaUSD: (id: string) => Promise<void>;
   registrarMovimientoNotificacion: (movimiento: Omit<Movimiento, 'id' | 'created_at'>, notificationId: string, transfer?: { flow: 'entrada' | 'salida'; counterpartId?: string }) => Promise<void>;
   importarMovimientos: (movimientos: Omit<Movimiento, 'id' | 'created_at'>[], opciones?: { actualizarSaldos?: boolean }) => Promise<void>;
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
@@ -143,6 +145,7 @@ interface FinanceState {
 
 const LOCAL_STORAGE_KEY = 'fintech_data_v2';
 const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
+const USD_CARD_REMINDER_MARKER = '[recordatorio-pago-tarjeta-usd]';
 
 function getScheduledTransferDestination(notas?: string) {
   return notas?.match(/\[destino:([^\]]+)\]/)?.[1] || null;
@@ -602,7 +605,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     if (!Number.isFinite(monto) || monto <= 0) throw new Error('Ingresa un valor de extracto válido.');
     const yaExiste = movimientos.some((movimiento) =>
       movimiento.tipo === 'transferencia' &&
-      movimiento.notas?.startsWith(CARD_PAYMENT_MARKER) &&
+      (movimiento.notas?.startsWith(CARD_PAYMENT_MARKER) || movimiento.notas?.startsWith(USD_CARD_REMINDER_MARKER)) &&
       movimiento.notas.includes(`[destino:${destinoId}]`) &&
       movimiento.fecha.slice(0, 7) === fecha.slice(0, 7)
     );
@@ -611,8 +614,15 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Inicia sesión para programar el pago de la tarjeta.');
 
-    const nuevoPago = {
-      user_id: session.user.id,
+    const misplacedReminder = movimientos.find((movement) =>
+      movement.estado === 'pendiente'
+      && movement.tipo === 'gasto'
+      && movement.descripcion.startsWith(`Pago mínimo tarjeta ${destino.nombre}`)
+      && movement.monto === monto
+      && movement.moneda === 'COP'
+      && movement.fecha.slice(0, 7) === fecha.slice(0, 7)
+    );
+    const paymentFields = {
       cuenta_id: origenId,
       categoria_id: null,
       tipo: 'transferencia' as const,
@@ -624,9 +634,64 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       es_recurrente: false,
       notas: `${CARD_PAYMENT_MARKER}[destino:${destinoId}]`,
     };
+
+    if (misplacedReminder) {
+      const { data, error } = await supabase.from('movimientos')
+        .update(paymentFields)
+        .eq('id', misplacedReminder.id)
+        .eq('user_id', session.user.id)
+        .eq('estado', 'pendiente')
+        .select('*')
+        .single();
+      if (error || !data) throw error || new Error('No se pudo corregir el recordatorio guardado.');
+      set((state) => ({ movimientos: state.movimientos.map((item) => item.id === misplacedReminder.id ? data as Movimiento : item) }));
+      persistLocally(get());
+      get().calcularResumenes();
+      return;
+    }
+
+    const nuevoPago = {
+      user_id: session.user.id,
+      ...paymentFields,
+    };
     const { data, error } = await supabase.from('movimientos').insert([nuevoPago]).select('*').single();
     if (error || !data) throw error || new Error('No se pudo programar el pago de la tarjeta.');
 
+    set((state) => ({ movimientos: [data as Movimiento, ...state.movimientos] }));
+    persistLocally(get());
+    get().calcularResumenes();
+  },
+
+  programarRecordatorioTarjetaUSD: async ({ cuentaId, monto, fecha, descripcion }) => {
+    const { cuentas, movimientos } = get();
+    const cuenta = cuentas.find((item) => item.id === cuentaId);
+    if (!cuenta || cuenta.tipo !== 'tarjeta_credito' || cuenta.moneda !== 'USD') throw new Error('Selecciona la tarjeta de crédito en USD.');
+    if (!Number.isFinite(monto) || monto <= 0) throw new Error('Ingresa un valor mínimo válido en USD.');
+    const alreadyScheduled = movimientos.some((movement) =>
+      movement.tipo === 'transferencia'
+      && movement.notas?.startsWith(USD_CARD_REMINDER_MARKER)
+      && movement.notas.includes(`[destino:${cuentaId}]`)
+      && movement.fecha.slice(0, 7) === fecha.slice(0, 7)
+    );
+    if (alreadyScheduled) throw new Error('Ya existe un recordatorio para esta tarjeta en este mes.');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para guardar el recordatorio.');
+    const reminder = {
+      user_id: session.user.id,
+      cuenta_id: cuentaId,
+      categoria_id: null,
+      tipo: 'transferencia' as const,
+      monto,
+      moneda: 'USD' as const,
+      fecha,
+      descripcion,
+      estado: 'pendiente' as const,
+      es_recurrente: false,
+      notas: `${USD_CARD_REMINDER_MARKER}[destino:${cuentaId}]`,
+    };
+    const { data, error } = await supabase.from('movimientos').insert([reminder]).select('*').single();
+    if (error || !data) throw error || new Error('No se pudo guardar el recordatorio.');
     set((state) => ({ movimientos: [data as Movimiento, ...state.movimientos] }));
     persistLocally(get());
     get().calcularResumenes();
@@ -697,6 +762,26 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         return update ? { ...account, saldo_actual: update.balance } : account;
       }),
     }));
+    persistLocally(get());
+    get().calcularResumenes();
+  },
+
+  marcarRecordatorioTarjetaUSD: async (id) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para actualizar el recordatorio.');
+    const movement = get().movimientos.find((item) => item.id === id);
+    if (!movement || movement.estado !== 'pendiente' || !movement.notas?.startsWith(USD_CARD_REMINDER_MARKER)) {
+      throw new Error('Este recordatorio ya no está pendiente.');
+    }
+    const { data, error } = await supabase.from('movimientos')
+      .update({ estado: 'completado' })
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .eq('estado', 'pendiente')
+      .select('id');
+    if (error) throw error;
+    if (!data?.length) throw new Error('El recordatorio cambió. Actualiza la vista e inténtalo de nuevo.');
+    set((state) => ({ movimientos: state.movimientos.map((item) => item.id === id ? { ...item, estado: 'completado' } : item) }));
     persistLocally(get());
     get().calcularResumenes();
   },
