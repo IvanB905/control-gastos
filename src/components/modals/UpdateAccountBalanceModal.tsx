@@ -53,7 +53,7 @@ export const UpdateAccountBalanceModal: React.FC<UpdateAccountBalanceModalProps>
           </div>
           <div className="space-y-1">
             <label htmlFor="account-balance-date" className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Saldo correspondiente al</label>
-            <input id="account-balance-date" type="date" required value={fecha} onChange={(event) => setFecha(event.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white" />
+            <input id="account-balance-date" type="date" required value={fecha} onInput={(event) => setFecha(event.currentTarget.value)} onChange={(event) => setFecha(event.currentTarget.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white" />
           </div>
           {cuenta.tipo === 'banco' && (
             <div className="space-y-1">

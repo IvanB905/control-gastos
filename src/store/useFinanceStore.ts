@@ -121,6 +121,7 @@ interface FinanceState {
   agregarMovimiento: (movimiento: Omit<Movimiento, 'id' | 'created_at'>) => Promise<void>;
   programarPagoTarjeta: (datos: { origenId: string; destinoId: string; monto: number; fecha: string; descripcion: string }) => Promise<void>;
   programarRecordatorioTarjetaUSD: (datos: { cuentaId: string; monto: number; fecha: string; descripcion: string }) => Promise<void>;
+  actualizarFechaRecordatorioTarjetaUSD: (id: string, fecha: string) => Promise<void>;
   marcarPagoPendiente: (id: string) => Promise<void>;
   marcarRecordatorioTarjetaUSD: (id: string) => Promise<void>;
   registrarMovimientoNotificacion: (movimiento: Omit<Movimiento, 'id' | 'created_at'>, notificationId: string, transfer?: { flow: 'entrada' | 'salida'; counterpartId?: string }) => Promise<void>;
@@ -693,6 +694,26 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     const { data, error } = await supabase.from('movimientos').insert([reminder]).select('*').single();
     if (error || !data) throw error || new Error('No se pudo guardar el recordatorio.');
     set((state) => ({ movimientos: [data as Movimiento, ...state.movimientos] }));
+    persistLocally(get());
+    get().calcularResumenes();
+  },
+
+  actualizarFechaRecordatorioTarjetaUSD: async (id, fecha) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para actualizar el recordatorio.');
+    const movement = get().movimientos.find((item) => item.id === id);
+    if (!movement || movement.estado !== 'pendiente' || !movement.notas?.startsWith(USD_CARD_REMINDER_MARKER)) {
+      throw new Error('No se encontró un recordatorio USD pendiente para editar.');
+    }
+    const { data, error } = await supabase.from('movimientos')
+      .update({ fecha })
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .eq('estado', 'pendiente')
+      .select('*')
+      .single();
+    if (error || !data) throw error || new Error('No se pudo actualizar la fecha del recordatorio.');
+    set((state) => ({ movimientos: state.movimientos.map((item) => item.id === id ? data as Movimiento : item) }));
     persistLocally(get());
     get().calcularResumenes();
   },

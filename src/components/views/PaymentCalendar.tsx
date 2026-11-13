@@ -29,7 +29,7 @@ function getDueStatus(date: string, today: Date, completed: boolean) {
 }
 
 export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ month, year }) => {
-  const { cuentas, movimientos, marcarPagoPendiente, programarPagoTarjeta, programarRecordatorioTarjetaUSD, marcarRecordatorioTarjetaUSD } = useFinanceStore();
+  const { cuentas, movimientos, marcarPagoPendiente, programarPagoTarjeta, programarRecordatorioTarjetaUSD, actualizarFechaRecordatorioTarjetaUSD, marcarRecordatorioTarjetaUSD } = useFinanceStore();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [usdAmounts, setUsdAmounts] = useState<Record<string, string>>({});
   const [sources, setSources] = useState<Record<string, string>>({});
@@ -115,16 +115,30 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
     finally { setBusyId(null); }
   };
 
+  const handleUpdateUSDReminderDate = async (movement: Movimiento) => {
+    setBusyId(movement.id);
+    setError(null);
+    try { await actualizarFechaRecordatorioTarjetaUSD(movement.id, dateFor(getDestinationId(movement.notas) || movement.cuenta_id)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'No se pudo actualizar la fecha del recordatorio.'); }
+    finally { setBusyId(null); }
+  };
+
   const monthHasCardPayment = (cardId: string) => items.some((movement) =>
     movement.tipo === 'transferencia' && movement.notas?.startsWith(CARD_PAYMENT_MARKER) && getDestinationId(movement.notas) === cardId
   );
 
-  const monthHasUSDReminder = (cardId: string) => items.some((movement) =>
-    movement.tipo === 'transferencia' && movement.notas?.startsWith(USD_CARD_REMINDER_MARKER) && getDestinationId(movement.notas) === cardId
-  );
-
   const dateFor = (cardId: string) => {
     if (dates[cardId]) return dates[cardId];
+    const existingCardPayment = movimientos.find((movement) => movement.tipo === 'transferencia'
+      && movement.notas?.startsWith(CARD_PAYMENT_MARKER)
+      && getDestinationId(movement.notas) === cardId
+      && movement.fecha.slice(0, 7) === `${year}-${String(month).padStart(2, '0')}`);
+    if (existingCardPayment) return existingCardPayment.fecha;
+    const existingUSDReminder = movimientos.find((movement) => movement.tipo === 'transferencia'
+      && movement.notas?.startsWith(USD_CARD_REMINDER_MARKER)
+      && getDestinationId(movement.notas) === cardId
+      && movement.fecha.slice(0, 7) === `${year}-${String(month).padStart(2, '0')}`);
+    if (existingUSDReminder) return existingUSDReminder.fecha;
     const savedCardMinimum = movimientos.find((movement) => movement.estado === 'pendiente'
       && movement.tipo === 'gasto'
       && movement.descripcion.startsWith('Pago mínimo tarjeta ')
@@ -165,7 +179,7 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
                   <label className="sr-only" htmlFor={`card-amount-${card.id}`}>Valor del extracto</label>
                   <input id={`card-amount-${card.id}`} inputMode="decimal" type="number" min="1" step="1" value={amountFor(card.id)} onChange={(event) => setAmounts((current) => ({ ...current, [card.id]: event.target.value }))} placeholder="Valor del extracto (COP)" className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
                   <label className="sr-only" htmlFor={`card-date-${card.id}`}>Fecha límite de pago</label>
-                  <input id={`card-date-${card.id}`} type="date" min={start} max={end} value={dateFor(card.id)} onChange={(event) => setDates((current) => ({ ...current, [card.id]: event.target.value }))} className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
+                  <input id={`card-date-${card.id}`} type="date" min={start} max={end} value={dateFor(card.id)} onInput={(event) => setDates((current) => ({ ...current, [card.id]: event.currentTarget.value }))} onChange={(event) => setDates((current) => ({ ...current, [card.id]: event.currentTarget.value }))} className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
                   <label className="sr-only" htmlFor={`card-source-${card.id}`}>Cuenta de origen</label>
                   <select id={`card-source-${card.id}`} value={sources[card.id] || liquidAccounts[0]?.id || ''} onChange={(event) => setSources((current) => ({ ...current, [card.id]: event.target.value }))} className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" disabled={liquidAccounts.length === 0}>
                     {liquidAccounts.map((account) => <option key={account.id} value={account.id}>{account.nombre}</option>)}
@@ -181,7 +195,10 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
       })}
 
       {usdCards.map((card) => {
-        const existing = monthHasUSDReminder(card.id);
+        const existingReminder = items.find((movement) => movement.tipo === 'transferencia'
+          && movement.notas?.startsWith(USD_CARD_REMINDER_MARKER)
+          && getDestinationId(movement.notas) === card.id);
+        const existing = Boolean(existingReminder);
         return <div key={card.id} className="rounded-xl border border-blue-100 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-950/20 p-4">
           <div className="flex items-start gap-3">
             <CreditCard className="w-4 h-4 mt-0.5 text-blue-500" />
@@ -190,13 +207,20 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
                 <p className="text-sm font-semibold text-zinc-900 dark:text-white">{card.nombre}</p>
                 <span className="text-[11px] font-medium text-blue-700 dark:text-blue-300">Vence {dateFor(card.id).slice(-2)} de {new Date(year, month - 1, 1).toLocaleDateString('es-CO', { month: 'long' })}</span>
               </div>
-              {existing ? <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">Recordatorio USD registrado. Solo avisa del vencimiento; no modifica los saldos.</p> : <>
+              {existing ? <>
+                <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">Recordatorio USD registrado. Solo avisa del vencimiento; no modifica los saldos.</p>
+                {existingReminder?.estado === 'pendiente' && <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <label className="sr-only" htmlFor={`usd-card-date-${card.id}`}>Fecha límite del mínimo en USD</label>
+                  <input id={`usd-card-date-${card.id}`} type="date" min={start} max={end} value={dateFor(card.id)} onInput={(event) => setDates((current) => ({ ...current, [card.id]: event.currentTarget.value }))} onChange={(event) => setDates((current) => ({ ...current, [card.id]: event.currentTarget.value }))} className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
+                  <button type="button" onClick={() => void handleUpdateUSDReminderDate(existingReminder)} disabled={busyId === card.id} className="rounded-lg border border-blue-200 dark:border-blue-900 px-3 py-2 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 disabled:opacity-50">Actualizar fecha</button>
+                </div>}
+              </> : <>
                 <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Recordatorio del mínimo en dólares. No se convierte a COP ni se descuenta de una cuenta.</p>
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
                   <label className="sr-only" htmlFor={`usd-card-amount-${card.id}`}>Pago mínimo en USD</label>
                   <input id={`usd-card-amount-${card.id}`} inputMode="decimal" type="number" min="0.01" step="0.01" value={usdAmountFor(card)} onChange={(event) => setUsdAmounts((current) => ({ ...current, [card.id]: event.target.value }))} placeholder="Mínimo (USD)" className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
                   <label className="sr-only" htmlFor={`usd-card-date-${card.id}`}>Fecha límite del mínimo en USD</label>
-                  <input id={`usd-card-date-${card.id}`} type="date" min={start} max={end} value={dateFor(card.id)} onChange={(event) => setDates((current) => ({ ...current, [card.id]: event.target.value }))} className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
+                  <input id={`usd-card-date-${card.id}`} type="date" min={start} max={end} value={dateFor(card.id)} onInput={(event) => setDates((current) => ({ ...current, [card.id]: event.currentTarget.value }))} onChange={(event) => setDates((current) => ({ ...current, [card.id]: event.currentTarget.value }))} className="min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-white" />
                   <button type="button" onClick={() => void handleScheduleUSDReminder(card)} disabled={busyId === card.id} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
                     <RefreshCw className={`w-3.5 h-3.5 ${busyId === card.id ? 'animate-spin' : ''}`} /> Guardar aviso
                   </button>
