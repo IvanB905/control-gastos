@@ -19,7 +19,9 @@ export const RecentTransactions: React.FC = () => {
     const matchesSearch = m.descripcion.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = filterType === 'todos' || m.tipo === filterType;
     return matchesSearch && matchesFilter;
-  });
+  }).sort((a, b) => b.fecha.localeCompare(a.fecha)
+    || (b.created_at || '').localeCompare(a.created_at || '')
+    || b.id.localeCompare(a.id));
 
   return (
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-6 shadow-xs">

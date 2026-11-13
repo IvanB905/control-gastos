@@ -45,7 +45,9 @@ export const MovementsView: React.FC = () => {
     const matchesMoneda = monedaFiltro === 'todas' || m.moneda === monedaFiltro;
 
     return matchesSearch && matchesTipo && matchesCuenta && matchesCategoria && matchesEstado && matchesMoneda;
-  });
+  }).sort((a, b) => b.fecha.localeCompare(a.fecha)
+    || (b.created_at || '').localeCompare(a.created_at || '')
+    || b.id.localeCompare(a.id));
 
   // Calculate filtered totals
   const totalIngresosCOP = filteredMovimientos
