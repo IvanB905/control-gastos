@@ -388,13 +388,15 @@ export const AccountsView: React.FC = () => {
                     {m.descripcion}
                   </p>
                   <p className="text-[11px] text-zinc-400">
-                    {formatDate(m.fecha)} • <span className="capitalize">{m.tipo}</span>
+                      {formatDate(m.fecha)} • <span className="capitalize">{m.tipo === 'transferencia'
+                        ? m.notas?.includes('[flujo:entrada]') ? 'Transferencia entrante' : 'Transferencia saliente'
+                        : m.tipo}</span>
                   </p>
                 </div>
                 <span className={`text-xs font-bold ${
                   m.tipo === 'gasto' ? 'text-rose-600 dark:text-rose-400' : m.tipo === 'ingreso' ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'
                 }`}>
-                  {m.tipo === 'gasto' ? '-' : '+'}{formatCurrency(m.monto, m.moneda)}
+                  {m.tipo === 'transferencia' ? '' : m.tipo === 'gasto' ? '-' : '+'}{formatCurrency(m.monto, m.moneda)}
                 </span>
               </div>
             ))}

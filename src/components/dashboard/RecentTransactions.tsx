@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { 
   ArrowDownLeft, 
   ArrowUpRight, 
+  ArrowRightLeft,
   Trash2, 
   Clock, 
   Search
@@ -99,9 +100,18 @@ export const RecentTransactions: React.FC = () => {
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
           {filteredMovimientos.map((m) => {
             const isGasto = m.tipo === 'gasto';
+            const isTransfer = m.tipo === 'transferencia';
             const categoria = categorias.find((c) => c.id === m.categoria_id);
             const cuenta = cuentas.find((c) => c.id === m.cuenta_id);
             const monedaMovimiento = m.moneda || cuenta?.moneda || 'COP';
+            const counterpartId = m.notas?.match(/\[(?:destino|origen):([0-9a-f-]{36})\]/i)?.[1];
+            const counterpart = counterpartId ? cuentas.find((item) => item.id === counterpartId) : undefined;
+            const isIncomingTransfer = m.notas?.includes('[flujo:entrada]');
+            const accountLabel = !isTransfer
+              ? cuenta?.nombre || 'Cuenta'
+              : isIncomingTransfer
+                ? `${counterpart?.nombre || 'Cuenta externa'} → ${cuenta?.nombre || 'Cuenta'}`
+                : `${cuenta?.nombre || 'Cuenta'} → ${counterpart?.nombre || 'Cuenta externa'}`;
 
             return (
               <div
@@ -112,12 +122,18 @@ export const RecentTransactions: React.FC = () => {
                 <div className="flex min-w-0 items-start gap-3.5 sm:items-center">
                   <div
                     className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                      isGasto
+                      isTransfer
+                        ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400'
+                        : isGasto
                         ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400'
                         : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
                     }`}
                   >
-                    {isGasto ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
+                    {isTransfer
+                      ? <ArrowRightLeft className="w-5 h-5" />
+                      : isGasto
+                        ? <ArrowUpRight className="w-5 h-5" />
+                        : <ArrowDownLeft className="w-5 h-5" />}
                   </div>
 
                   <div className="min-w-0 flex-1">
@@ -135,10 +151,10 @@ export const RecentTransactions: React.FC = () => {
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-400 dark:text-zinc-500">
                       <span className="shrink-0">{formatDate(m.fecha)}</span>
                       <span>•</span>
-                      <span>{categoria?.nombre || 'General'}</span>
+                      <span>{isTransfer ? (isIncomingTransfer ? 'Transferencia entrante' : 'Transferencia saliente') : categoria?.nombre || 'General'}</span>
                       <span>•</span>
                       <span className="min-w-0 break-words font-medium text-zinc-500 dark:text-zinc-400">
-                        {cuenta?.nombre || 'Cuenta'}
+                        {accountLabel}
                       </span>
                     </div>
                   </div>
@@ -148,10 +164,14 @@ export const RecentTransactions: React.FC = () => {
                 <div className="flex min-w-0 w-full items-center justify-between gap-3 pl-[3.375rem] sm:w-auto sm:justify-end sm:pl-0">
                   <span
                     className={`min-w-0 break-words text-right text-sm font-bold tracking-tight sm:whitespace-nowrap ${
-                      isGasto ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+                      isTransfer
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : isGasto
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-emerald-600 dark:text-emerald-400'
                     }`}
                   >
-                    {isGasto ? '-' : '+'}{formatCurrency(m.monto, monedaMovimiento)}
+                    {isTransfer ? '' : isGasto ? '-' : '+'}{formatCurrency(m.monto, monedaMovimiento)}
                   </span>
 
                   <button
