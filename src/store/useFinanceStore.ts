@@ -592,33 +592,37 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   agregarMovimiento: async (nuevo) => {
-    const id = `m_${Date.now()}`;
-    const movimientoCreado: Movimiento = { ...nuevo, id };
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para guardar el movimiento en tu cuenta.');
+    const account = get().cuentas.find((item) => item.id === nuevo.cuenta_id);
+    if (!account) throw new Error('Selecciona una cuenta válida.');
+    if (account.moneda !== nuevo.moneda) throw new Error('La moneda del movimiento no coincide con la cuenta.');
+    if (!Number.isFinite(nuevo.monto) || nuevo.monto <= 0) throw new Error('El monto debe ser mayor que cero.');
 
+    const { data, error } = await supabase.from('movimientos')
+      .insert([{ ...nuevo, user_id: session.user.id }])
+      .select('*')
+      .single();
+    if (error || !data) {
+      console.error('No se pudo guardar el movimiento en Supabase:', error?.message || 'sin fila devuelta');
+      throw new Error('No se guardó el movimiento en la nube. Revisa tu conexión e inténtalo de nuevo.');
+    }
+
+    const movimientoCreado = data as Movimiento;
+    const { data: refreshedAccount, error: balanceError } = await supabase.from('cuentas')
+      .select('*')
+      .eq('id', nuevo.cuenta_id)
+      .eq('user_id', session.user.id)
+      .maybeSingle();
     set((state) => ({
       movimientos: [movimientoCreado, ...state.movimientos],
-      cuentas: state.cuentas.map((c) => {
-        if (c.id === nuevo.cuenta_id && nuevo.estado === 'completado') {
-          return {
-            ...c,
-            saldo_actual: nuevo.tipo === 'ingreso' ? c.saldo_actual + nuevo.monto : c.saldo_actual - nuevo.monto,
-          };
-        }
-        return c;
-      }),
+      cuentas: state.cuentas.map((item) => item.id === nuevo.cuenta_id && refreshedAccount ? refreshedAccount as Cuenta : item),
+      syncError: balanceError || !refreshedAccount
+        ? 'El movimiento se guardó, pero no se pudo actualizar el saldo visible. Recarga los datos.'
+        : null,
     }));
-
     get().calcularResumenes();
     persistLocally(get());
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await supabase.from('movimientos').insert([{ ...nuevo, user_id: session.user.id }]);
-      }
-    } catch (e) {
-      console.warn('Registro local guardado');
-    }
   },
 
   programarPagoTarjeta: async ({ origenId, destinoId, monto, fecha, descripcion }) => {
@@ -1021,25 +1025,62 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   editarMovimiento: async (id, updated) => {
+    const previous = get().movimientos.find((item) => item.id === id);
+    if (!previous) throw new Error('No se encontró el movimiento. Actualiza la lista e inténtalo de nuevo.');
+    if (previous.tipo === 'transferencia') throw new Error('Las transferencias no se pueden editar desde este formulario.');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para editar el movimiento en tu cuenta.');
+    const nextAccountId = updated.cuenta_id || previous.cuenta_id;
+    const nextAccount = get().cuentas.find((item) => item.id === nextAccountId);
+    if (!nextAccount) throw new Error('Selecciona una cuenta válida.');
+    if ((updated.moneda || previous.moneda) !== nextAccount.moneda) throw new Error('La moneda del movimiento no coincide con la cuenta.');
+    if (updated.monto !== undefined && (!Number.isFinite(updated.monto) || updated.monto <= 0)) throw new Error('El monto debe ser mayor que cero.');
+
+    const { data, error } = await supabase.from('movimientos')
+      .update(updated)
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .select('*')
+      .single();
+    if (error || !data) {
+      console.error('No se pudo editar el movimiento en Supabase:', error?.message || 'sin fila devuelta');
+      throw new Error('No se guardaron los cambios en la nube. Revisa tu conexión e inténtalo de nuevo.');
+    }
+
+    const updatedAccountIds = [...new Set([previous.cuenta_id, (data as Movimiento).cuenta_id])];
+    const { data: refreshedAccounts, error: accountError } = await supabase.from('cuentas')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .in('id', updatedAccountIds);
+    if (accountError || updatedAccountIds.some((accountId) => !refreshedAccounts?.some((item) => item.id === accountId))) {
+      set((state) => ({
+        movimientos: state.movimientos.map((item) => item.id === id ? data as Movimiento : item),
+        syncError: 'El movimiento se guardó, pero no se pudo actualizar el saldo visible. Recarga los datos.',
+      }));
+      get().calcularResumenes();
+      persistLocally(get());
+      throw new Error('El movimiento sí se guardó, pero no se pudo actualizar el saldo visible. Recarga los datos.');
+    }
+
     set((state) => ({
-      movimientos: state.movimientos.map((m) => (m.id === id ? { ...m, ...updated } : m)),
+      movimientos: state.movimientos.map((item) => item.id === id ? data as Movimiento : item),
+      cuentas: state.cuentas.map((account) => refreshedAccounts?.find((item) => item.id === account.id) || account),
+      syncError: null,
     }));
     get().calcularResumenes();
     persistLocally(get());
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await supabase.from('movimientos').update(updated).eq('id', id);
-      }
-    } catch (e) {}
   },
 
   eliminarMovimiento: async (id) => {
     const deletedMovement = get().movimientos.find((movement) => movement.id === id);
     if (!deletedMovement) return;
+    if (deletedMovement.tipo === 'transferencia' && !deletedMovement.notification_id) {
+      throw new Error('Esta transferencia manual no se puede eliminar todavía porque sus dos saldos deben revertirse juntos.');
+    }
     const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
+    if (!session) throw new Error('Inicia sesión para eliminar movimientos sincronizados.');
+    {
       const { data: deletedRows, error: deleteError } = await supabase.from('movimientos')
         .delete()
         .eq('id', id)
@@ -1070,30 +1111,24 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
             .select('id');
           if (fallbackError) throw fallbackError;
           if (!fallbackDeleted?.length) throw new Error('No se pudo confirmar la eliminación del movimiento en la nube.');
-        }
+        } else throw new Error('No se encontró el movimiento en la nube; no se eliminó de la lista. Recarga los datos.');
       }
     }
 
-    const transferDeltas = new Map<string, number>();
-    if (deletedMovement?.notification_id && deletedMovement.tipo === 'transferencia' && deletedMovement.estado === 'completado') {
-      const flowDelta = deletedMovement.notas?.includes('[flujo:entrada]') ? deletedMovement.monto : -deletedMovement.monto;
-      const sourceDelta = -flowDelta;
-      const relatedAccountId = deletedMovement.notas?.match(/\[(?:destino|origen):([0-9a-f-]{36})\]/i)?.[1];
-      const sourceAccount = get().cuentas.find((account) => account.id === deletedMovement.cuenta_id);
-      if (sourceAccount && (!sourceAccount.saldo_fecha || deletedMovement.fecha > sourceAccount.saldo_fecha)) {
-        transferDeltas.set(sourceAccount.id, sourceDelta);
-      }
-      const relatedAccount = relatedAccountId && get().cuentas.find((account) => account.id === relatedAccountId);
-      if (relatedAccount && (!relatedAccount.saldo_fecha || deletedMovement.fecha > relatedAccount.saldo_fecha)) {
-        transferDeltas.set(relatedAccount.id, -sourceDelta);
-      }
-    }
+    const relatedAccountId = deletedMovement.tipo === 'transferencia'
+      ? deletedMovement.notas?.match(/\[(?:destino|origen):([0-9a-f-]{36})\]/i)?.[1]
+      : undefined;
+    const accountIds = [...new Set([deletedMovement.cuenta_id, relatedAccountId].filter((value): value is string => Boolean(value)))];
+    const { data: refreshedAccounts, error: balanceError } = await supabase.from('cuentas')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .in('id', accountIds);
     set((state) => ({
       movimientos: state.movimientos.filter((m) => m.id !== id),
-      cuentas: state.cuentas.map((account) => {
-        const delta = transferDeltas.get(account.id);
-        return delta ? { ...account, saldo_actual: account.saldo_actual + delta } : account;
-      }),
+      cuentas: state.cuentas.map((account) => refreshedAccounts?.find((item) => item.id === account.id) as Cuenta || account),
+      syncError: balanceError || accountIds.some((accountId) => !refreshedAccounts?.some((account) => account.id === accountId))
+        ? 'El movimiento se eliminó, pero no se pudieron actualizar los saldos visibles. Recarga los datos.'
+        : null,
     }));
     get().calcularResumenes();
     persistLocally(get());
@@ -1255,61 +1290,107 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   realizarTransferencia: async (origenId, destinoId, monto, descripcion, fecha) => {
-    const { cuentas } = get();
-    const origen = cuentas.find((c) => c.id === origenId);
-    const destino = cuentas.find((c) => c.id === destinoId);
+    if (origenId === destinoId) throw new Error('Selecciona dos cuentas diferentes.');
+    if (!Number.isFinite(monto) || monto <= 0) throw new Error('El monto debe ser mayor que cero.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || Number.isNaN(new Date(`${fecha}T00:00:00`).getTime())) throw new Error('Selecciona una fecha válida.');
 
-    if (!origen || !destino || monto <= 0) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para transferir entre tus cuentas.');
 
-    set((state) => ({
-      cuentas: state.cuentas.map((c) => {
-        if (c.id === origenId) {
-          return { ...c, saldo_actual: c.saldo_actual - monto };
-        }
-        if (c.id === destinoId) {
-          return { ...c, saldo_actual: c.saldo_actual + monto };
-        }
-        return c;
-      }),
-      movimientos: [
-        {
-          id: `m_${Date.now()}`,
-          user_id: origen.user_id,
-          cuenta_id: origenId,
-          categoria_id: null,
-          tipo: 'transferencia',
-          monto,
-          moneda: origen.moneda,
-          fecha,
-          descripcion: descripcion || `Transferencia: ${origen.nombre} ➔ ${destino.nombre}`,
-          estado: 'completado',
-          es_recurrente: false,
-        },
-        ...state.movimientos,
-      ],
-    }));
-    persistLocally(get());
+    const { data: accounts, error: accountError } = await supabase.from('cuentas')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .in('id', [origenId, destinoId]);
+    if (accountError) throw new Error('No se pudieron verificar las cuentas. Actualiza los datos e inténtalo de nuevo.');
+    const origen = accounts?.find((account) => account.id === origenId) as Cuenta | undefined;
+    const destino = accounts?.find((account) => account.id === destinoId) as Cuenta | undefined;
+    if (!origen || !destino) throw new Error('No se encontraron las dos cuentas en tu perfil. Actualiza los datos e inténtalo de nuevo.');
+    if (origen.moneda !== destino.moneda) throw new Error('Las cuentas deben usar la misma moneda para transferir.');
+    if (!countsTowardAvailableBalance(origen)) throw new Error('El FNA y las cuentas de crédito no se pueden usar como origen de una transferencia.');
+    if (Number(origen.saldo_actual) < monto) throw new Error('El saldo de origen no alcanza para esta transferencia.');
+
+    const nombreMovimiento = descripcion.trim() || `Transferencia: ${origen.nombre} ➔ ${destino.nombre}`;
+    const { data: movementData, error: movementError } = await supabase.from('movimientos')
+      .insert([{
+        user_id: session.user.id,
+        cuenta_id: origenId,
+        categoria_id: null,
+        tipo: 'transferencia',
+        monto,
+        moneda: origen.moneda,
+        fecha,
+        descripcion: nombreMovimiento,
+        estado: 'completado',
+        es_recurrente: false,
+        notas: `[flujo:salida][destino:${destinoId}]`,
+      }])
+      .select('*')
+      .single();
+    if (movementError || !movementData) {
+      console.error('No se pudo registrar la transferencia en Supabase:', movementError?.message || 'sin fila devuelta');
+      throw new Error('No se registró la transferencia en la nube. No se modificaron los saldos.');
+    }
+
+    const persistedMovement = movementData as Movimiento;
+    const origenSaldoAnterior = Number(origen.saldo_actual);
+    const destinoSaldoAnterior = Number(destino.saldo_actual);
+    const aplicaOrigen = !origen.saldo_fecha || fecha > origen.saldo_fecha;
+    const aplicaDestino = !destino.saldo_fecha || fecha > destino.saldo_fecha;
+    const cambios = [
+      ...(aplicaOrigen ? [{ cuenta: origen, anterior: origenSaldoAnterior, nuevo: origenSaldoAnterior - monto }] : []),
+      ...(aplicaDestino ? [{ cuenta: destino, anterior: destinoSaldoAnterior, nuevo: destinoSaldoAnterior + monto }] : []),
+    ];
+    const aplicados: typeof cambios = [];
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await Promise.all([
-          supabase.from('cuentas').update({ saldo_actual: origen.saldo_actual - monto }).eq('id', origenId),
-          supabase.from('cuentas').update({ saldo_actual: destino.saldo_actual + monto }).eq('id', destinoId),
-          supabase.from('movimientos').insert([{
-            user_id: session.user.id,
-            cuenta_id: origenId,
-            tipo: 'transferencia',
-            monto,
-            fecha,
-            descripcion: descripcion || `Transferencia: ${origen.nombre} ➔ ${destino.nombre}`,
-            estado: 'completado',
-          }]),
-        ]);
+      for (const cambio of cambios) {
+        const { data, error } = await supabase.from('cuentas')
+          .update({ saldo_actual: cambio.nuevo })
+          .eq('id', cambio.cuenta.id)
+          .eq('user_id', session.user.id)
+          .eq('saldo_actual', cambio.anterior)
+          .select('id');
+        if (error) throw error;
+        if (!data?.some((row) => row.id === cambio.cuenta.id)) {
+          throw new Error('El saldo cambió en otra sesión.');
+        }
+        aplicados.push(cambio);
       }
-    } catch (e) {
-      console.warn('Transferencia guardada localmente');
+    } catch (error) {
+      const rollbackOrder = [...aplicados].reverse();
+      const rollbackResults = await Promise.all([
+        ...rollbackOrder.map((cambio) => supabase.from('cuentas')
+          .update({ saldo_actual: cambio.anterior })
+          .eq('id', cambio.cuenta.id)
+          .eq('user_id', session.user.id)
+          .eq('saldo_actual', cambio.nuevo)
+          .select('id')),
+        supabase.from('movimientos').delete()
+          .eq('id', persistedMovement.id)
+          .eq('user_id', session.user.id)
+          .select('id'),
+      ]);
+      const rollbackFailed = rollbackResults.some((result) => result.error)
+        || rollbackResults.slice(0, rollbackOrder.length).some((result, index) => !result.data?.some((row) => row.id === rollbackOrder[index].cuenta.id))
+        || !rollbackResults[rollbackResults.length - 1]?.data?.some((row) => row.id === persistedMovement.id);
+      if (rollbackFailed) {
+        set({ syncError: 'La transferencia necesita revisión: no se pudo confirmar que todas las partes volvieran a su estado anterior. Recarga las cuentas.' });
+        throw new Error('La transferencia tuvo un fallo y la reversión no se pudo confirmar. Recarga las cuentas antes de volver a intentarlo.');
+      }
+      console.error('Se revirtió la transferencia incompleta:', error instanceof Error ? error.message : 'error de sincronización');
+      throw new Error('No se completó la transferencia. La operación fue revertida; actualiza los saldos e inténtalo de nuevo.');
     }
+
+    set((state) => ({
+      cuentas: state.cuentas.map((account) => {
+        const cambio = cambios.find((item) => item.cuenta.id === account.id);
+        return cambio ? { ...account, saldo_actual: cambio.nuevo } : account;
+      }),
+      movimientos: [persistedMovement, ...state.movimientos],
+      syncError: null,
+    }));
+    get().calcularResumenes();
+    persistLocally(get());
   },
 
   agregarPresupuesto: async (p) => {

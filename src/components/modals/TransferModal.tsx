@@ -16,21 +16,31 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
   const [monto, setMonto] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   if (!isOpen) return null;
 
   const cuentaOrigen = cuentas.find((c) => c.id === origenId);
   const cuentaDestino = cuentas.find((c) => c.id === destinoId);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsedMonto = parseFloat(monto);
     if (isNaN(parsedMonto) || parsedMonto <= 0 || origenId === destinoId) return;
 
-    realizarTransferencia(origenId, destinoId, parsedMonto, descripcion, fecha);
-    setMonto('');
-    setDescripcion('');
-    onClose();
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      await realizarTransferencia(origenId, destinoId, parsedMonto, descripcion, fecha);
+      setMonto('');
+      setDescripcion('');
+      onClose();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'No se pudo completar la transferencia.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -38,6 +48,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
       <div className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-zinc-200 bg-white p-5 shadow-2xl relative dark:border-zinc-800 dark:bg-zinc-900 sm:max-h-[92vh] sm:p-6">
         <button
           onClick={onClose}
+          disabled={isSaving}
           className="absolute top-5 right-5 p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
@@ -56,6 +67,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {saveError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{saveError}</p>}
           {/* Cuenta Origen */}
           <div className="space-y-1">
             <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
@@ -153,15 +165,17 @@ export const TransferModal: React.FC<TransferModalProps> = ({ isOpen, onClose })
             <button
               type="button"
               onClick={onClose}
+              disabled={isSaving}
               className="px-4 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md shadow-indigo-600/20 active:scale-95 transition-all cursor-pointer"
+              disabled={isSaving}
+              className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 text-white rounded-xl shadow-md shadow-indigo-600/20 active:scale-95 transition-all cursor-pointer"
             >
-              Confirmar Transferencia
+              {isSaving ? 'Guardando…' : 'Confirmar Transferencia'}
             </button>
           </div>
         </form>

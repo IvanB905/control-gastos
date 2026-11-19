@@ -310,13 +310,15 @@ export const MovementsView: React.FC = () => {
 
                     {/* Action buttons: Edit & Delete */}
                     <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setEditingMovement(m)}
-                        className="flex min-h-10 min-w-10 items-center justify-center p-1.5 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
-                        title="Editar movimiento"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
+                      {!isTransfer && (
+                        <button
+                          onClick={() => setEditingMovement(m)}
+                          className="flex min-h-10 min-w-10 items-center justify-center p-1.5 text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                          title="Editar movimiento"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                      )}
 
                       <button
                         onClick={() => {

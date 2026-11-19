@@ -24,8 +24,11 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
   const [fecha, setFecha] = useState('');
   const [estado, setEstado] = useState<EstadoMovimiento>('completado');
   const [esRecurrente, setEsRecurrente] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
+    setSaveError('');
     if (movimiento) {
       setMonto(movimiento.monto.toString());
       setDescripcion(movimiento.descripcion);
@@ -42,23 +45,30 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
 
   const categoriasFiltradas = categorias.filter((c) => c.tipo === movimiento.tipo);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsedMonto = parseFloat(monto);
     if (isNaN(parsedMonto) || parsedMonto <= 0) return;
 
-    editarMovimiento(movimiento.id, {
-      monto: parsedMonto,
-      descripcion,
-      categoria_id: categoriaId || null,
-      cuenta_id: cuentaId,
-      moneda,
-      fecha,
-      estado,
-      es_recurrente: esRecurrente,
-    });
-
-    onClose();
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      await editarMovimiento(movimiento.id, {
+        monto: parsedMonto,
+        descripcion,
+        categoria_id: categoriaId || null,
+        cuenta_id: cuentaId,
+        moneda,
+        fecha,
+        estado,
+        es_recurrente: esRecurrente,
+      });
+      onClose();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'No se pudieron guardar los cambios.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -66,6 +76,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
       <div className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border border-zinc-200 bg-white p-5 shadow-2xl relative dark:border-zinc-800 dark:bg-zinc-900 sm:max-h-[92vh] sm:p-6">
         <button
           onClick={onClose}
+          disabled={isSaving}
           className="absolute top-5 right-5 p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
@@ -86,6 +97,7 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {saveError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{saveError}</p>}
           {/* Monto y Moneda */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
@@ -229,15 +241,17 @@ export const EditTransactionModal: React.FC<EditTransactionModalProps> = ({
             <button
               type="button"
               onClick={onClose}
+              disabled={isSaving}
               className="px-4 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
+              disabled={isSaving}
+              className="px-5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 text-white rounded-xl shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
             >
-              Guardar Cambios
+              {isSaving ? 'Guardando…' : 'Guardar Cambios'}
             </button>
           </div>
         </form>

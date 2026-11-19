@@ -17,6 +17,8 @@ export const TransactionModal: React.FC = () => {
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10));
   const [estado, setEstado] = useState<EstadoMovimiento>('completado');
   const [esRecurrente, setEsRecurrente] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   if (!isTransactionModalOpen) return null;
 
@@ -30,27 +32,35 @@ export const TransactionModal: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsedMonto = parseFloat(monto);
     if (isNaN(parsedMonto) || parsedMonto <= 0) return;
 
-    agregarMovimiento({
-      user_id: 'user1',
-      cuenta_id: cuentaId || cuentas[0]?.id || '',
-      categoria_id: categoriaId || categoriasFiltradas[0]?.id || null,
-      tipo,
-      moneda,
-      monto: parsedMonto,
-      fecha,
-      descripcion: descripcion || (tipo === 'gasto' ? 'Gasto general' : 'Ingreso general'),
-      estado,
-      es_recurrente: esRecurrente,
-    });
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      await agregarMovimiento({
+        user_id: '',
+        cuenta_id: cuentaId || cuentas[0]?.id || '',
+        categoria_id: categoriaId || categoriasFiltradas[0]?.id || null,
+        tipo,
+        moneda,
+        monto: parsedMonto,
+        fecha,
+        descripcion: descripcion || (tipo === 'gasto' ? 'Gasto general' : 'Ingreso general'),
+        estado,
+        es_recurrente: esRecurrente,
+      });
 
-    setMonto('');
-    setDescripcion('');
-    setTransactionModalOpen(false);
+      setMonto('');
+      setDescripcion('');
+      setTransactionModalOpen(false);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'No se pudo guardar el movimiento.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -63,6 +73,7 @@ export const TransactionModal: React.FC = () => {
           </h3>
           <button
             onClick={() => setTransactionModalOpen(false)}
+            disabled={isSaving}
             className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -70,6 +81,7 @@ export const TransactionModal: React.FC = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {saveError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{saveError}</p>}
           {/* Type Selector (Gasto / Ingreso) */}
           <div className="grid grid-cols-2 gap-2 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl">
             <button
@@ -252,15 +264,17 @@ export const TransactionModal: React.FC = () => {
             <button
               type="button"
               onClick={() => setTransactionModalOpen(false)}
+              disabled={isSaving}
               className="px-4 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
+              disabled={isSaving}
+              className="px-5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 text-white rounded-xl shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
             >
-              Guardar Movimiento
+              {isSaving ? 'Guardando…' : 'Guardar Movimiento'}
             </button>
           </div>
         </form>
