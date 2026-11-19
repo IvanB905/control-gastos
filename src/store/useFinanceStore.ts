@@ -140,18 +140,18 @@ interface FinanceState {
   reconciliarSaldosImportados: () => Promise<{ movimientosAplicados: number; cuentasActualizadas: number }>;
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
-  agregarCuenta: (cuenta: Omit<Cuenta, 'id' | 'created_at' | 'saldo_actual'>) => Promise<void>;
+  agregarCuenta: (cuenta: Omit<Cuenta, 'id' | 'created_at' | 'saldo_actual' | 'user_id'>) => Promise<void>;
   actualizarSaldoCuenta: (id: string, saldoActual: number, saldoFecha: string, ingresoMensualEstimado?: number) => Promise<void>;
   eliminarCuenta: (id: string) => Promise<void>;
   consolidarCuentas: (origenId: string, destinoId: string) => Promise<number>;
   realizarTransferencia: (origenId: string, destinoId: string, monto: number, descripcion: string, fecha: string) => Promise<void>;
-  agregarPresupuesto: (presupuesto: Omit<Presupuesto, 'id'>) => Promise<void>;
+  agregarPresupuesto: (presupuesto: Omit<Presupuesto, 'id' | 'user_id'>) => Promise<void>;
   editarPresupuesto: (id: string, updated: Pick<Presupuesto, 'categoria_id' | 'monto_limite' | 'moneda'>) => Promise<void>;
   eliminarPresupuesto: (id: string) => Promise<void>;
-  agregarMetaAhorro: (meta: Omit<MetaAhorro, 'id'>) => Promise<void>;
+  agregarMetaAhorro: (meta: Omit<MetaAhorro, 'id' | 'user_id'>) => Promise<void>;
   abonarAMetaAhorro: (id: string, monto: number) => Promise<void>;
   eliminarMetaAhorro: (id: string) => Promise<void>;
-  agregarCategoria: (cat: Omit<Categoria, 'id'>) => Promise<void>;
+  agregarCategoria: (cat: Omit<Categoria, 'id' | 'user_id'>) => Promise<void>;
   eliminarCategoria: (id: string) => Promise<void>;
   calcularResumenes: () => void;
   restablecerDatosDemo: () => void;
@@ -230,6 +230,64 @@ const persistLocally = (state: FinanceState) => {
 
 const normalizeSyncKey = (value: unknown) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('es-CO');
 const accountSyncKey = (account: Cuenta) => [normalizeSyncKey(account.nombre), account.tipo, account.moneda].join('|');
+const savingsGoalSyncKey = (goal: Pick<MetaAhorro, 'nombre' | 'moneda'>) => `${normalizeSyncKey(goal.nombre)}|${goal.moneda}`;
+const savingsGoalsMigrationKey = (userId: string) => `fintech_metas_ahorro_migradas_v1:${userId}`;
+const savingsGoalsSchemaMessage = 'Falta crear la tabla de metas en Supabase. Ejecuta database/migrations/20261119_sync_savings_goals.sql y luego reintenta la sincronización.';
+const normalizeSavingsGoal = (goal: MetaAhorro): MetaAhorro => ({
+  ...goal,
+  monto_objetivo: Number(goal.monto_objetivo),
+  monto_actual: Number(goal.monto_actual),
+});
+
+const isMissingSavingsGoalsTable = (error: { code?: string; message?: string }) =>
+  error.code === '42P01' || error.code === 'PGRST205'
+  || /metas_ahorro.*(does not exist|schema cache|not find)/i.test(error.message || '');
+
+async function loadAndMigrateSavingsGoals(userId: string, legacyGoals: MetaAhorro[]) {
+  const cloudResult = await supabase.from('metas_ahorro').select('*').eq('user_id', userId);
+  if (cloudResult.error) {
+    if (isMissingSavingsGoalsTable(cloudResult.error)) return { metasAhorro: legacyGoals, schemaMissing: true };
+    throw cloudResult.error;
+  }
+
+  const cloudGoals = ((cloudResult.data || []) as MetaAhorro[]).map(normalizeSavingsGoal);
+  const migrationKey = savingsGoalsMigrationKey(userId);
+  let alreadyMigrated = false;
+  try { alreadyMigrated = localStorage.getItem(migrationKey) === '1'; } catch (error) {}
+
+  if (!alreadyMigrated) {
+    const knownGoals = new Set(cloudGoals.map(savingsGoalSyncKey));
+    const goalsToMigrate = legacyGoals.filter((goal) => {
+      const isValid = typeof goal.nombre === 'string' && goal.nombre.trim().length > 0
+        && (goal.moneda === 'COP' || goal.moneda === 'USD')
+        && Number.isFinite(Number(goal.monto_objetivo)) && Number(goal.monto_objetivo) > 0
+        && Number.isFinite(Number(goal.monto_actual)) && Number(goal.monto_actual) >= 0;
+      if (!isValid) return false;
+      const key = savingsGoalSyncKey(goal);
+      if (knownGoals.has(key)) return false;
+      knownGoals.add(key);
+      return true;
+    }).map((goal) => ({
+      user_id: userId,
+      nombre: goal.nombre.trim(),
+      monto_objetivo: Number(goal.monto_objetivo),
+      monto_actual: Number(goal.monto_actual),
+      moneda: goal.moneda,
+      fecha_limite: goal.fecha_limite || null,
+      color: goal.color || '#10B981',
+      icono: goal.icono || 'Target',
+    }));
+
+    if (goalsToMigrate.length) {
+      const insertResult = await supabase.from('metas_ahorro').insert(goalsToMigrate).select('*');
+      if (insertResult.error) throw insertResult.error;
+      cloudGoals.push(...((insertResult.data || []) as MetaAhorro[]).map(normalizeSavingsGoal));
+    }
+    try { localStorage.setItem(migrationKey, '1'); } catch (error) {}
+  }
+
+  return { metasAhorro: cloudGoals, schemaMissing: false };
+}
 
 const movementSyncKey = (movement: Movimiento, accountIdentity?: string) => {
   const importId = movement.notas?.match(/\[import:([a-z0-9-]+)\]/i)?.[1];
@@ -272,7 +330,7 @@ const insertRowsWithSchemaFallback = async (table: 'cuentas' | 'categorias' | 'm
 const updateRowWithSchemaFallback = async (table: 'cuentas', values: Record<string, unknown>, id: string, userId: string) => {
   const payload = { ...values };
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const result = await supabase.from(table).update(payload).eq('id', id).eq('user_id', userId);
+    const result = await supabase.from(table).update(payload).eq('id', id).eq('user_id', userId).select('id');
     if (!result.error) return result;
     const missingColumn = result.error.code === 'PGRST204'
       ? result.error.message.match(/Could not find the '([^']+)' column/)?.[1]
@@ -433,7 +491,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   categorias: savedLocalData?.categorias || DEFAULT_CATEGORIAS,
   movimientos: savedLocalData?.movimientos || DEFAULT_MOVIMIENTOS,
   presupuestos: savedLocalData?.presupuestos || DEFAULT_PRESUPUESTOS,
-  metasAhorro: savedLocalData?.metasAhorro || DEFAULT_METAS_AHORRO,
+  metasAhorro: DEFAULT_METAS_AHORRO,
   isLoading: false,
   syncError: null,
   resumenCOP: {
@@ -531,6 +589,8 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const userId = session.user.id;
 
       const localSnapshot = loadSavedData();
+      const localGoals = Array.isArray(localSnapshot?.metasAhorro) ? localSnapshot.metasAhorro as MetaAhorro[] : [];
+      const goalSync = await loadAndMigrateSavingsGoals(userId, localGoals);
       const localDataNeedsSync = Boolean(localSnapshot && (
         (Array.isArray(localSnapshot.movimientos) && localSnapshot.movimientos.length > 0)
         || (Array.isArray(localSnapshot.presupuestos) && localSnapshot.presupuestos.length > 0)
@@ -564,7 +624,11 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
             movimientos: local.movimientos,
             presupuestos: local.presupuestos,
           });
-          set({ ...synced, syncError: null });
+          set({
+            ...synced,
+            metasAhorro: goalSync.metasAhorro,
+            syncError: goalSync.schemaMissing ? savingsGoalsSchemaMessage : null,
+          });
           get().calcularResumenes();
           persistLocally(get());
           set({ isLoading: false });
@@ -586,10 +650,12 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         categorias: resCategorias.data || [],
         movimientos: dedupeImportedMovements((resMovimientos.data || []) as Movimiento[]),
         presupuestos: resPresupuestos.data || [],
-        syncError: null,
+        metasAhorro: goalSync.metasAhorro,
+        syncError: goalSync.schemaMissing ? savingsGoalsSchemaMessage : null,
       });
 
       get().calcularResumenes();
+      persistLocally(get());
     } catch (error) {
       const detail = error instanceof Error ? error.message : JSON.stringify(error);
       console.error('Error al cargar datos desde Supabase:', detail);
@@ -1355,50 +1421,28 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   agregarCuenta: async (cuenta) => {
-    const id = `c_${Date.now()}`;
-    const nuevaCuenta: Cuenta = {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para guardar la cuenta en tu perfil.');
+    const result = await insertRowsWithSchemaFallback('cuentas', [{
       ...cuenta,
-      id,
       saldo_actual: cuenta.saldo_inicial,
-      es_predeterminada: false,
-    };
-
-    set((state) => ({
-      cuentas: [...state.cuentas, nuevaCuenta],
-    }));
+      user_id: session.user.id,
+    }]);
+    if (result.error || !result.data?.[0]) throw new Error('No se pudo guardar la cuenta en Supabase. Revisa la sincronización e inténtalo de nuevo.');
+    set((state) => ({ cuentas: [...state.cuentas, result.data[0] as Cuenta] }));
     persistLocally(get());
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { error } = await supabase.from('cuentas').insert([{
-          ...cuenta,
-          saldo_actual: cuenta.saldo_inicial,
-          user_id: session.user.id,
-        }]);
-        if (error) throw error;
-      }
-    } catch (e) {
-      console.warn('Cuenta guardada localmente');
-      set({ syncError: 'La cuenta quedó en este navegador, pero no se guardó en la nube. Usa Reintentar sincronización.' });
-    }
   },
 
   actualizarSaldoCuenta: async (id, saldoActual, saldoFecha, ingresoMensualEstimado) => {
     const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para actualizar el saldo de la cuenta.');
     const updates = {
       saldo_actual: saldoActual,
       saldo_fecha: saldoFecha,
       ...(ingresoMensualEstimado === undefined ? {} : { ingreso_mensual_estimado: ingresoMensualEstimado }),
     };
-    if (session) {
-      const { error } = await supabase
-        .from('cuentas')
-        .update(updates)
-        .eq('id', id)
-        .eq('user_id', session.user.id);
-      if (error) throw error;
-    }
+    const result = await updateRowWithSchemaFallback('cuentas', updates, id, session.user.id);
+    if (result.error || !result.data?.some((row) => row.id === id)) throw new Error('No se pudo guardar el saldo en Supabase. Recarga la cuenta e inténtalo de nuevo.');
 
     set((state) => ({
       cuentas: state.cuentas.map((cuenta) => cuenta.id === id
@@ -1618,19 +1662,16 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     const duplicate = get().presupuestos.some((item) => item.categoria_id === p.categoria_id && item.moneda === p.moneda && item.mes === p.mes && item.anio === p.anio);
     if (duplicate) throw new Error('Ya existe un presupuesto para esta categoría y este mes.');
     const { data: { session } } = await supabase.auth.getSession();
-    let nuevoPresupuesto: Presupuesto = { ...p, id: `p_${Date.now()}`, gasto_actual: 0 };
-
-    if (session) {
-      const { data, error } = await supabase.from('presupuestos')
-        .insert([{ ...p, user_id: session.user.id }])
-        .select('*')
-        .single();
-      if (error || !data) {
-        console.error('No se pudo crear el presupuesto en Supabase:', error?.message || 'sin fila devuelta');
-        throw new Error('No se guardó el presupuesto en la nube. Revisa tu conexión e inténtalo de nuevo.');
-      }
-      nuevoPresupuesto = { ...data as Presupuesto, moneda: (data as Presupuesto).moneda || p.moneda };
+    if (!session) throw new Error('Inicia sesión para guardar el presupuesto en tu perfil.');
+    const { data, error } = await supabase.from('presupuestos')
+      .insert([{ ...p, user_id: session.user.id }])
+      .select('*')
+      .single();
+    if (error || !data) {
+      console.error('No se pudo crear el presupuesto en Supabase:', error?.message || 'sin fila devuelta');
+      throw new Error('No se guardó el presupuesto en la nube. Revisa tu conexión e inténtalo de nuevo.');
     }
+    const nuevoPresupuesto = { ...data as Presupuesto, moneda: (data as Presupuesto).moneda || p.moneda };
 
     set((state) => ({ presupuestos: [...state.presupuestos, nuevoPresupuesto] }));
     get().calcularResumenes();
@@ -1649,20 +1690,18 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     if (duplicate) throw new Error('Ya existe otro presupuesto para esta categoría y este mes.');
 
     const { data: { session } } = await supabase.auth.getSession();
-    let actualizado: Presupuesto = { ...previous, ...updated };
-    if (session && !id.startsWith('p_')) {
-      const { data, error } = await supabase.from('presupuestos')
-        .update(updated)
-        .eq('id', id)
-        .eq('user_id', session.user.id)
-        .select('*')
-        .single();
-      if (error || !data) {
-        console.error('No se pudo editar el presupuesto en Supabase:', error?.message || 'sin fila devuelta');
-        throw new Error('No se guardaron los cambios en la nube. Revisa tu conexión e inténtalo de nuevo.');
-      }
-      actualizado = { ...data as Presupuesto, moneda: (data as Presupuesto).moneda || updated.moneda };
+    if (!session) throw new Error('Inicia sesión para editar el presupuesto.');
+    const { data, error } = await supabase.from('presupuestos')
+      .update(updated)
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .select('*')
+      .single();
+    if (error || !data) {
+      console.error('No se pudo editar el presupuesto en Supabase:', error?.message || 'sin fila devuelta');
+      throw new Error('No se guardaron los cambios en la nube. Recarga los presupuestos e inténtalo de nuevo.');
     }
+    const actualizado = { ...data as Presupuesto, moneda: (data as Presupuesto).moneda || updated.moneda };
 
     set((state) => ({ presupuestos: state.presupuestos.map((item) => item.id === id ? actualizado : item) }));
     get().calcularResumenes();
@@ -1671,67 +1710,94 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
 
   eliminarPresupuesto: async (id) => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (session && !id.startsWith('p_')) {
-      const { data, error } = await supabase.from('presupuestos')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', session.user.id)
-        .select('id');
-      if (error || !data?.length) {
-        console.error('No se pudo eliminar el presupuesto en Supabase:', error?.message || 'sin fila eliminada');
-        throw new Error('No se eliminó el presupuesto en la nube. Actualiza la lista e inténtalo de nuevo.');
-      }
+    if (!session) throw new Error('Inicia sesión para eliminar el presupuesto.');
+    const { data, error } = await supabase.from('presupuestos')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .select('id');
+    if (error || !data?.length) {
+      console.error('No se pudo eliminar el presupuesto en Supabase:', error?.message || 'sin fila eliminada');
+      throw new Error('No se eliminó el presupuesto en la nube. Actualiza la lista e inténtalo de nuevo.');
     }
     set((state) => ({ presupuestos: state.presupuestos.filter((p) => p.id !== id) }));
     persistLocally(get());
   },
 
   agregarMetaAhorro: async (meta) => {
-    const id = `meta_${Date.now()}`;
-    const nuevaMeta: MetaAhorro = { ...meta, id };
-    set((state) => ({ metasAhorro: [...state.metasAhorro, nuevaMeta] }));
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para guardar la meta en tu cuenta.');
+    if (!meta.nombre.trim() || !Number.isFinite(meta.monto_objetivo) || meta.monto_objetivo <= 0
+      || !Number.isFinite(meta.monto_actual) || meta.monto_actual < 0) {
+      throw new Error('Revisa el nombre y los valores de la meta.');
+    }
+    const { data, error } = await supabase.from('metas_ahorro')
+      .insert([{ ...meta, nombre: meta.nombre.trim(), user_id: session.user.id }])
+      .select('*')
+      .single();
+    if (error || !data) throw new Error(error && isMissingSavingsGoalsTable(error) ? savingsGoalsSchemaMessage : 'No se pudo guardar la meta en Supabase. Revisa la sincronización e inténtalo de nuevo.');
+    set((state) => ({ metasAhorro: [...state.metasAhorro, normalizeSavingsGoal(data as MetaAhorro)] }));
     persistLocally(get());
   },
 
   abonarAMetaAhorro: async (id, monto) => {
-    set((state) => ({
-      metasAhorro: state.metasAhorro.map((m) =>
-        m.id === id ? { ...m, monto_actual: m.monto_actual + monto } : m
-      ),
-    }));
+    if (!Number.isFinite(monto) || monto <= 0) throw new Error('El abono debe ser mayor que cero.');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para actualizar la meta.');
+    const goal = get().metasAhorro.find((item) => item.id === id);
+    if (!goal) throw new Error('No se encontró la meta. Recarga los datos e inténtalo de nuevo.');
+    const { data, error } = await supabase.from('metas_ahorro')
+      .update({ monto_actual: goal.monto_actual + monto })
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .eq('monto_actual', goal.monto_actual)
+      .select('*')
+      .single();
+    if (error || !data) throw new Error(error && isMissingSavingsGoalsTable(error) ? savingsGoalsSchemaMessage : 'No se pudo guardar el abono en Supabase. Revisa la sincronización e inténtalo de nuevo.');
+    set((state) => ({ metasAhorro: state.metasAhorro.map((item) => item.id === id ? normalizeSavingsGoal(data as MetaAhorro) : item) }));
     persistLocally(get());
   },
 
   eliminarMetaAhorro: async (id) => {
-    set((state) => ({
-      metasAhorro: state.metasAhorro.filter((m) => m.id !== id),
-    }));
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para eliminar la meta.');
+    const { data, error } = await supabase.from('metas_ahorro')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .select('id');
+    if (error || !data?.length) throw new Error(error && isMissingSavingsGoalsTable(error) ? savingsGoalsSchemaMessage : 'No se pudo eliminar la meta de Supabase. Recarga los datos e inténtalo de nuevo.');
+    set((state) => ({ metasAhorro: state.metasAhorro.filter((item) => item.id !== id) }));
     persistLocally(get());
   },
 
   agregarCategoria: async (cat) => {
-    const id = `cat_${Date.now()}`;
-    const nuevaCat: Categoria = { ...cat, id };
-    set((state) => ({ categorias: [...state.categorias, nuevaCat] }));
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para guardar la categoría en tu cuenta.');
+    const { data, error } = await supabase.from('categorias')
+      .insert([{ ...cat, user_id: session.user.id }])
+      .select('*')
+      .single();
+    if (error || !data) throw new Error('No se pudo guardar la categoría en Supabase. Revisa la sincronización e inténtalo de nuevo.');
+    set((state) => ({ categorias: [...state.categorias, data as Categoria] }));
     persistLocally(get());
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await supabase.from('categorias').insert([{ ...cat, user_id: session.user.id }]);
-      }
-    } catch (e) {}
   },
 
   eliminarCategoria: async (id) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para eliminar la categoría.');
+    const { data, error } = await supabase.from('categorias')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', session.user.id)
+      .select('id');
+    if (error || !data?.length) throw new Error('No se pudo eliminar la categoría de Supabase. Recarga los datos e inténtalo de nuevo.');
     set((state) => ({
-      categorias: state.categorias.filter((c) => c.id !== id),
+      categorias: state.categorias.filter((category) => category.id !== id),
+      presupuestos: state.presupuestos.filter((budget) => budget.categoria_id !== id),
+      movimientos: state.movimientos.map((movement) => movement.categoria_id === id ? { ...movement, categoria_id: null } : movement),
     }));
     persistLocally(get());
-
-    try {
-      await supabase.from('categorias').delete().eq('id', id);
-    } catch (e) {}
   },
 
   restablecerDatosDemo: () => {

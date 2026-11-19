@@ -55,7 +55,6 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, presu
         await editarPresupuesto(presupuesto.id, { categoria_id: categoriaId, monto_limite: parsed, moneda });
       } else {
         await agregarPresupuesto({
-          user_id: 'user1',
           categoria_id: categoriaId,
           monto_limite: parsed,
           moneda,

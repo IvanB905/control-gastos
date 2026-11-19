@@ -53,6 +53,8 @@ export const BudgetsView: React.FC = () => {
   const [montoAbono, setMontoAbono] = useState('');
   const [presupuestoEnEdicion, setPresupuestoEnEdicion] = useState<Presupuesto | null>(null);
   const [errorPresupuesto, setErrorPresupuesto] = useState('');
+  const [errorMeta, setErrorMeta] = useState('');
+  const [metaActionLoading, setMetaActionLoading] = useState(false);
   const [eliminandoPresupuestoId, setEliminandoPresupuestoId] = useState<string | null>(null);
 
   const abrirNuevoPresupuesto = () => {
@@ -117,13 +119,34 @@ export const BudgetsView: React.FC = () => {
   // Cálculos de metas
   const totalAhorradoMetas = metasFiltradas.reduce((acc, m) => acc + m.monto_actual, 0);
 
-  const handleAbonar = (e: React.FormEvent, metaId: string) => {
+  const handleAbonar = async (e: React.FormEvent, metaId: string) => {
     e.preventDefault();
     const val = parseFloat(montoAbono);
     if (!isNaN(val) && val > 0) {
-      abonarAMetaAhorro(metaId, val);
-      setMontoAbono('');
-      setAbonoMetaId(null);
+      setMetaActionLoading(true);
+      setErrorMeta('');
+      try {
+        await abonarAMetaAhorro(metaId, val);
+        setMontoAbono('');
+        setAbonoMetaId(null);
+      } catch (error) {
+        setErrorMeta(error instanceof Error ? error.message : 'No se pudo guardar el abono.');
+      } finally {
+        setMetaActionLoading(false);
+      }
+    }
+  };
+
+  const eliminarMetaConfirmada = async (metaId: string) => {
+    if (!window.confirm('¿Eliminar esta meta de ahorro?')) return;
+    setMetaActionLoading(true);
+    setErrorMeta('');
+    try {
+      await eliminarMetaAhorro(metaId);
+    } catch (error) {
+      setErrorMeta(error instanceof Error ? error.message : 'No se pudo eliminar la meta.');
+    } finally {
+      setMetaActionLoading(false);
     }
   };
 
@@ -373,6 +396,8 @@ export const BudgetsView: React.FC = () => {
           </div>
         </div>
 
+        {errorMeta && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{errorMeta}</p>}
+
         {metasFiltradas.length === 0 ? (
           <div className="py-10 text-center text-zinc-400 text-xs">
             No tienes metas de ahorro activas en {moneda}. Haz clic en "+ Nueva Meta de Ahorro" para definir una.
@@ -403,8 +428,9 @@ export const BudgetsView: React.FC = () => {
                     </div>
 
                     <button
-                      onClick={() => eliminarMetaAhorro(meta.id)}
-                      className="p-1 text-zinc-300 hover:text-red-500 transition-colors cursor-pointer"
+                      onClick={() => void eliminarMetaConfirmada(meta.id)}
+                      disabled={metaActionLoading}
+                      className="p-1 text-zinc-300 hover:text-red-500 transition-colors cursor-pointer disabled:opacity-50"
                       title="Eliminar meta"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -439,7 +465,7 @@ export const BudgetsView: React.FC = () => {
 
                   {/* Action: Abonar dinero */}
                   {abonoMetaId === meta.id ? (
-                    <form onSubmit={(e) => handleAbonar(e, meta.id)} className="flex items-center gap-2 pt-2 border-t border-zinc-200/50 dark:border-zinc-700/50">
+                    <form onSubmit={(e) => void handleAbonar(e, meta.id)} className="flex items-center gap-2 pt-2 border-t border-zinc-200/50 dark:border-zinc-700/50">
                       <input
                         type="number"
                         placeholder="Monto"
@@ -450,6 +476,7 @@ export const BudgetsView: React.FC = () => {
                       />
                       <button
                         type="submit"
+                        disabled={metaActionLoading}
                         className="px-2.5 py-1 text-xs font-semibold bg-emerald-600 text-white rounded-lg cursor-pointer"
                       >
                         Abonar

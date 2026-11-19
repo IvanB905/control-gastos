@@ -31,36 +31,49 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
   const [ingresoMensual, setIngresoMensual] = useState('');
   const [aporteMensual, setAporteMensual] = useState('');
   const [plazoMeses, setPlazoMeses] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const monto = parseFloat(saldoInicial) || 0;
     const esDeuda = tipo === 'tarjeta_credito' || tipo === 'credito_libre_inversion';
+    if (!nombre.trim()) {
+      setError('Escribe un nombre para la cuenta.');
+      return;
+    }
 
-    agregarCuenta({
-      user_id: 'user1',
-      nombre,
-      tipo,
-      moneda,
-      saldo_inicial: esDeuda ? -Math.abs(monto) : monto,
-      color,
-      icono: tipo === 'banco' ? 'Landmark' : tipo === 'nequi_daviplata' ? 'Smartphone' : tipo === 'credito_libre_inversion' || tipo === 'tarjeta_credito' ? 'CreditCard' : 'Banknote',
-      es_predeterminada: false,
-      ...(tipo === 'tarjeta_credito' && limiteCredito ? { limite_credito: Number(limiteCredito) } : {}),
-      ...(tipo === 'banco' && ingresoMensual ? { ingreso_mensual_estimado: Number(ingresoMensual) } : {}),
-      ...(tipo === 'ahorro' && aporteMensual ? { aporte_mensual: Number(aporteMensual) } : {}),
-      ...(tipo === 'credito_libre_inversion' && plazoMeses ? { plazo_meses: Number(plazoMeses) } : {}),
-    });
+    setSaving(true);
+    setError('');
+    try {
+      await agregarCuenta({
+        nombre: nombre.trim(),
+        tipo,
+        moneda,
+        saldo_inicial: esDeuda ? -Math.abs(monto) : monto,
+        color,
+        icono: tipo === 'banco' ? 'Landmark' : tipo === 'nequi_daviplata' ? 'Smartphone' : tipo === 'credito_libre_inversion' || tipo === 'tarjeta_credito' ? 'CreditCard' : 'Banknote',
+        es_predeterminada: false,
+        ...(tipo === 'tarjeta_credito' && limiteCredito ? { limite_credito: Number(limiteCredito) } : {}),
+        ...(tipo === 'banco' && ingresoMensual ? { ingreso_mensual_estimado: Number(ingresoMensual) } : {}),
+        ...(tipo === 'ahorro' && aporteMensual ? { aporte_mensual: Number(aporteMensual) } : {}),
+        ...(tipo === 'credito_libre_inversion' && plazoMeses ? { plazo_meses: Number(plazoMeses) } : {}),
+      });
 
-    setNombre('');
-    setSaldoInicial('');
-    setLimiteCredito('');
-    setIngresoMensual('');
-    setAporteMensual('');
-    setPlazoMeses('');
-    onClose();
+      setNombre('');
+      setSaldoInicial('');
+      setLimiteCredito('');
+      setIngresoMensual('');
+      setAporteMensual('');
+      setPlazoMeses('');
+      onClose();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudo guardar la cuenta.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -81,6 +94,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{error}</p>}
           {/* Nombre de la Cuenta */}
           <div className="space-y-1">
             <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
@@ -212,9 +226,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({ isOpen, onClose }) =
             </button>
             <button
               type="submit"
+              disabled={saving}
               className="px-5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
             >
-              Crear Cuenta
+              {saving ? 'Guardando…' : 'Crear Cuenta'}
             </button>
           </div>
         </form>

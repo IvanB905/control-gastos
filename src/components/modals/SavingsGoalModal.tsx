@@ -28,30 +28,42 @@ export const SavingsGoalModal: React.FC<SavingsGoalModalProps> = ({ isOpen, onCl
   const [moneda, setMoneda] = useState<TipoMoneda>(monedaGlobal);
   const [fechaLimite, setFechaLimite] = useState('');
   const [color, setColor] = useState(COLOR_PRESETS[0].value);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const obj = parseFloat(montoObjetivo);
     const act = parseFloat(montoInicial) || 0;
-    if (isNaN(obj) || obj <= 0 || !nombre) return;
+    if (isNaN(obj) || obj <= 0 || !nombre.trim() || act < 0) {
+      setError('Ingresa un nombre y valores válidos para la meta.');
+      return;
+    }
 
-    agregarMetaAhorro({
-      user_id: 'user1',
-      nombre,
-      monto_objetivo: obj,
-      monto_actual: act,
-      moneda,
-      fecha_limite: fechaLimite || undefined,
-      color,
-      icono: 'Target',
-    });
+    setSaving(true);
+    setError('');
+    try {
+      await agregarMetaAhorro({
+        nombre: nombre.trim(),
+        monto_objetivo: obj,
+        monto_actual: act,
+        moneda,
+        fecha_limite: fechaLimite || undefined,
+        color,
+        icono: 'Target',
+      });
 
-    setNombre('');
-    setMontoObjetivo('');
-    setMontoInicial('');
-    onClose();
+      setNombre('');
+      setMontoObjetivo('');
+      setMontoInicial('');
+      onClose();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudo guardar la meta.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -77,6 +89,7 @@ export const SavingsGoalModal: React.FC<SavingsGoalModalProps> = ({ isOpen, onCl
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{error}</p>}
           {/* Nombre de la Meta */}
           <div className="space-y-1">
             <label className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
@@ -200,9 +213,10 @@ export const SavingsGoalModal: React.FC<SavingsGoalModalProps> = ({ isOpen, onCl
             </button>
             <button
               type="submit"
+              disabled={saving}
               className="px-5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
             >
-              Crear Meta
+              {saving ? 'Guardando…' : 'Crear Meta'}
             </button>
           </div>
         </form>

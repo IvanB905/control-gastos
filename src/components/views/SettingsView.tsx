@@ -33,6 +33,7 @@ export const SettingsView: React.FC = () => {
   const [isCategoryModalOpen, setCategoryModalOpen] = useState(false);
   const [modalInitialType, setModalInitialType] = useState<'gasto' | 'ingreso'>('gasto');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const categoriasFiltradas = categorias.filter((c) => c.tipo === activeCategoryTab);
 
@@ -45,7 +46,7 @@ export const SettingsView: React.FC = () => {
     setCategoryModalOpen(true);
   };
 
-  const handleDeleteCategory = (id: string, nombre: string) => {
+  const handleDeleteCategory = async (id: string, nombre: string) => {
     const count = getMovimientosCount(id);
     if (count > 0) {
       if (!confirm(`La categoría "${nombre}" tiene ${count} movimiento(s) asociados. ¿Deseas eliminarla de todas formas?`)) {
@@ -56,7 +57,14 @@ export const SettingsView: React.FC = () => {
         return;
       }
     }
-    eliminarCategoria(id);
+    setActionError(null);
+    setStatusMessage(null);
+    try {
+      await eliminarCategoria(id);
+      setStatusMessage(`Categoría "${nombre}" eliminada y sincronizada.`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'No se pudo eliminar la categoría.');
+    }
   };
 
   const handleExportJSON = () => {
@@ -109,6 +117,7 @@ export const SettingsView: React.FC = () => {
           <span>{statusMessage}</span>
         </div>
       )}
+      {actionError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs font-semibold text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{actionError}</p>}
 
       {/* Grid of Settings Modules */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -200,7 +209,7 @@ export const SettingsView: React.FC = () => {
                         title={`Color: ${cat.color}`}
                       />
                       <button
-                        onClick={() => handleDeleteCategory(cat.id, cat.nombre)}
+                        onClick={() => void handleDeleteCategory(cat.id, cat.nombre)}
                         className="p-1.5 text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
                         title="Eliminar categoría"
                       >

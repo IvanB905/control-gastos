@@ -113,7 +113,35 @@ CREATE POLICY "Gestión de presupuestos propios"
     WITH CHECK (auth.uid() = user_id);
 
 -- ==============================================================================
--- 6. TABLA: movimientos (Transacciones financieras)
+-- 6. TABLA: metas_ahorro (Metas personales)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.metas_ahorro (
+    id TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    nombre TEXT NOT NULL CHECK (length(trim(nombre)) > 0),
+    monto_objetivo NUMERIC(12, 2) NOT NULL CHECK (monto_objetivo > 0),
+    monto_actual NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (monto_actual >= 0),
+    moneda VARCHAR(3) NOT NULL CHECK (moneda IN ('COP', 'USD')),
+    fecha_limite DATE,
+    color VARCHAR(20) NOT NULL DEFAULT '#10B981',
+    icono VARCHAR(50) NOT NULL DEFAULT 'Target',
+    created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+    PRIMARY KEY (user_id, id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_metas_ahorro_usuario ON public.metas_ahorro(user_id);
+
+ALTER TABLE public.metas_ahorro ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Gestión de metas propias"
+    ON public.metas_ahorro FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.metas_ahorro TO authenticated;
+
+-- ==============================================================================
+-- 7. TABLA: movimientos (Transacciones financieras)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.movimientos (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -145,7 +173,7 @@ CREATE POLICY "Gestión de movimientos propios"
     WITH CHECK (auth.uid() = user_id);
 
 -- ==============================================================================
--- 7. TRIGGER: Inicialización automática de Usuario (Perfil + Cuentas + Categorías)
+-- 8. TRIGGER: Inicialización automática de Usuario (Perfil + Cuentas + Categorías)
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
@@ -192,7 +220,7 @@ CREATE TRIGGER on_auth_user_created
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- ==============================================================================
--- 8. TRIGGER: Actualización Automática de Saldo en Cuentas
+-- 9. TRIGGER: Actualización Automática de Saldo en Cuentas
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.aplicar_transferencia_notificada(
     p_usuario_id UUID,
@@ -441,7 +469,7 @@ CREATE TRIGGER trigger_actualizar_saldo
     FOR EACH ROW EXECUTE FUNCTION public.actualizar_saldo_cuenta();
 
 -- ==============================================================================
--- 9. FUNCIÓN RPC: Resumen Mensual (Ingresos, Gastos, Balance y Presupuestos)
+-- 10. FUNCIÓN RPC: Resumen Mensual (Ingresos, Gastos, Balance y Presupuestos)
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.obtener_resumen_mensual(
     p_user_id UUID,
