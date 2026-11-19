@@ -1,10 +1,13 @@
 import type { Categoria, Cuenta, MetaAhorro, Movimiento, TipoMoneda } from '../types';
+import { countsTowardAvailableBalance } from './utils';
 
 export type MonthlyPlan = {
   estimatedIncome: number;
   recordedIncome: number;
   supplementalIncome: number;
   projectedIncome: number;
+  remainingExpectedIncome: number;
+  currentLiquidBalance: number;
   paidExpenses: number;
   pendingExpenses: number;
   plannedReserves: number;
@@ -51,12 +54,16 @@ export function calculateMonthlyPlan(
     .filter((account) => account.moneda === currency && account.tipo === 'banco')
     .reduce((sum, account) => sum + (account.ingreso_mensual_estimado || 0), 0);
   const payrollCategoryIds = new Set(categories
-    .filter((category) => category.tipo === 'ingreso' && /nomina|salario/.test(normalizeFinanceText(category.nombre)))
+    .filter((category) => category.tipo === 'ingreso' && /nomina|salario|bono.*transporte|auxilio.*transporte/.test(normalizeFinanceText(category.nombre)))
     .map((category) => category.id));
   const eligibleIncomes = items
     .filter((movement) => movement.tipo === 'ingreso' && movement.estado === 'completado'
       && !/desembolso|prestamo|credito|avance/.test(normalizeFinanceText(movement.descripcion)));
   const recordedIncome = eligibleIncomes
+    .reduce((sum, movement) => sum + movement.monto, 0);
+  const expectedIncomeReceived = eligibleIncomes
+    .filter((movement) => (movement.categoria_id && payrollCategoryIds.has(movement.categoria_id))
+      || /nomina|salario|bono.*transporte|auxilio.*transporte/.test(normalizeFinanceText(movement.descripcion)))
     .reduce((sum, movement) => sum + movement.monto, 0);
   const supplementalIncome = eligibleIncomes
     .filter((movement) => !movement.categoria_id || !payrollCategoryIds.has(movement.categoria_id))
@@ -93,7 +100,16 @@ export function calculateMonthlyPlan(
     .filter((goal) => goal.moneda === currency && /universidad|semestre/i.test(goal.nombre))
     .reduce((sum, goal) => sum + Math.max(goal.monto_objetivo - goal.monto_actual, 0) / 6, 0);
   const projectedIncome = estimatedIncome + supplementalIncome;
-  const variableMoney = projectedIncome - paidExpenses - pendingExpenses - plannedReserves - fnaContribution - universityContribution;
+  const remainingExpectedIncome = Math.max(estimatedIncome - expectedIncomeReceived, 0);
+  const currentLiquidBalance = accounts
+    .filter((account) => account.moneda === currency && countsTowardAvailableBalance(account))
+    .reduce((sum, account) => sum + Number(account.saldo_actual || 0), 0);
+  const now = new Date();
+  const currentOrFutureMonth = year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth() + 1);
+  const monthlyBudgetRemainder = projectedIncome - paidExpenses - pendingExpenses - plannedReserves - fnaContribution - universityContribution;
+  const variableMoney = currentOrFutureMonth
+    ? currentLiquidBalance + remainingExpectedIncome - pendingExpenses - plannedReserves - fnaContribution - universityContribution
+    : monthlyBudgetRemainder;
 
-  return { estimatedIncome, recordedIncome, supplementalIncome, projectedIncome, paidExpenses, pendingExpenses, plannedReserves, fnaContribution, universityContribution, variableMoney };
+  return { estimatedIncome, recordedIncome, supplementalIncome, projectedIncome, remainingExpectedIncome, currentLiquidBalance, paidExpenses, pendingExpenses, plannedReserves, fnaContribution, universityContribution, variableMoney };
 }

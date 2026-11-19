@@ -3,7 +3,7 @@ import { AlertTriangle, CalendarDays, WalletCards } from 'lucide-react';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
 import { calculateMonthlyPlan } from '../../lib/financialPlan';
-import { countsTowardAvailableBalance, formatCurrency, MESES } from '../../lib/utils';
+import { formatCurrency, MESES } from '../../lib/utils';
 
 export const DailySpendingProjection: React.FC = () => {
   const { cuentas, categorias, movimientos, metasAhorro } = useFinanceStore();
@@ -19,9 +19,7 @@ export const DailySpendingProjection: React.FC = () => {
     [cuentas, categorias, metasAhorro, movimientos, selectedMonth, selectedYear, moneda],
   );
 
-  const liquidBalance = cuentas
-    .filter((account) => account.moneda === moneda && countsTowardAvailableBalance(account))
-    .reduce((sum, account) => sum + account.saldo_actual, 0);
+  const liquidBalance = plan.currentLiquidBalance;
   const cardDebt = cuentas
     .filter((account) => account.moneda === moneda && account.tipo === 'tarjeta_credito' && account.saldo_actual < 0)
     .reduce((sum, account) => sum + Math.abs(account.saldo_actual), 0);
@@ -42,7 +40,7 @@ export const DailySpendingProjection: React.FC = () => {
           </div>
           <div className="min-w-0">
             <h2 id="daily-spending-title" className="text-sm font-bold text-zinc-900 dark:text-white">
-              {isCurrentMonth ? 'Disponible para gastar hoy' : 'Proyección diaria del mes'}
+              {isCurrentMonth ? 'Proyección restante del mes' : 'Proyección diaria del mes'}
             </h2>
             <p className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
               <CalendarDays className="h-3 w-3" aria-hidden="true" />
@@ -51,7 +49,7 @@ export const DailySpendingProjection: React.FC = () => {
           </div>
         </div>
         <p className={`text-right text-xl font-extrabold tracking-tight ${shortfall > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
-          {formatCurrency(dailyProjection, moneda)}<span className="ml-1 text-xs font-semibold">/ día</span>
+          {formatCurrency(dailyProjection, moneda)}<span className="ml-1 text-xs font-semibold">/ día proyectado</span>
         </p>
       </div>
 
@@ -67,14 +65,14 @@ export const DailySpendingProjection: React.FC = () => {
           <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">{formatCurrency(liquidBalance, moneda)}</p>
         </div>
         <div className="col-span-2 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70 sm:col-span-1">
-          <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Ingreso mensual previsto</p>
-          <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">{formatCurrency(plan.estimatedIncome, moneda)}</p>
+          <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Ingreso previsto por recibir</p>
+          <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">{formatCurrency(plan.remainingExpectedIncome, moneda)}</p>
         </div>
       </div>
 
       {(plan.supplementalIncome > 0 || plan.plannedReserves > 0) && (
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-          {plan.supplementalIncome > 0 && <span>Ingresos adicionales recibidos: <strong>{formatCurrency(plan.supplementalIncome, moneda)}</strong></span>}
+          {plan.supplementalIncome > 0 && <span>Ingresos adicionales ya reflejados en el saldo: <strong>{formatCurrency(plan.supplementalIncome, moneda)}</strong></span>}
           {plan.plannedReserves > 0 && <span>Reserva de imprevistos separada: <strong>{formatCurrency(plan.plannedReserves, moneda)}</strong></span>}
         </div>
       )}
@@ -82,7 +80,7 @@ export const DailySpendingProjection: React.FC = () => {
       {shortfall > 0 && (
         <p role="status" className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] leading-4 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-200">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          Los gastos y ahorros previstos superan el ingreso del periodo por {formatCurrency(shortfall, moneda)}. Revisa que los movimientos importados correspondan a {periodName}.
+          La proyección al cierre de {periodName} queda por debajo de cero en {formatCurrency(shortfall, moneda)}. Revisa el saldo de las cuentas y los compromisos pendientes.
         </p>
       )}
 
@@ -93,7 +91,7 @@ export const DailySpendingProjection: React.FC = () => {
       )}
 
       <p className="mt-3 text-[10px] leading-4 text-zinc-400">
-        Proyección mensual basada en ingresos previstos y adicionales, gastos pagados y pendientes, reservas, aporte al FNA y ahorro universitario. El saldo líquido neto suma las cuentas operativas e incluye sus saldos negativos; excluye el FNA y las tarjetas.
+        Es una proyección, no dinero disponible hoy: parte del saldo líquido actual, suma el ingreso previsto que aún no aparece en movimientos y resta compromisos pendientes y ahorros separados. Los gastos pagados ya están reflejados en el saldo actual. Se excluyen el FNA y las tarjetas.
       </p>
     </section>
   );

@@ -38,7 +38,7 @@ function answerQuestion(question: string, accounts: Cuenta[], goals: MetaAhorro[
   if (/disponible|puedo gastar|me queda|saldo/.test(q)) {
     const liquid = accounts.filter((account) => account.moneda === currency && countsTowardAvailableBalance(account)).reduce((sum, account) => sum + account.saldo_actual, 0);
     const cardBalance = accounts.filter((account) => account.moneda === currency && account.tipo === 'tarjeta_credito' && account.saldo_actual < 0).reduce((sum, account) => sum + Math.abs(account.saldo_actual), 0);
-    return `Para ${periodName}, mi proyección deja ${formatCurrency(plan.variableMoney, currency)} para gastos variables después de apartar compromisos y ahorros conocidos.\n\nIngreso mensual previsto: ${formatCurrency(plan.estimatedIncome, currency)}; ingresos adicionales registrados: ${formatCurrency(plan.supplementalIncome, currency)}; nómina y otros ingresos recibidos: ${formatCurrency(plan.recordedIncome, currency)}; gastos ya pagados: ${formatCurrency(plan.paidExpenses, currency)}; facturas pendientes: ${formatCurrency(plan.pendingExpenses, currency)}; reserva de imprevistos: ${formatCurrency(plan.plannedReserves, currency)}; aporte FNA: ${formatCurrency(plan.fnaContribution, currency)}; ahorro del semestre: ${formatCurrency(plan.universityContribution, currency)}.\n\nSaldo líquido neto en cuentas operativas (sin FNA ni tarjetas): ${formatCurrency(liquid, currency)}. La deuda de tarjeta (${formatCurrency(cardBalance, currency)}) queda aparte; el saldo bancario debe contrastarse con el extracto antes de tomarlo como cifra definitiva.`;
+    return `Para ${periodName}, mi proyección de cierre deja ${formatCurrency(plan.variableMoney, currency)} después de apartar los compromisos y ahorros registrados. El cálculo parte del saldo líquido actual (${formatCurrency(liquid, currency)}), suma el ingreso previsto que aún no aparece en movimientos (${formatCurrency(plan.remainingExpectedIncome, currency)}) y resta facturas pendientes (${formatCurrency(plan.pendingExpenses, currency)}), reserva de imprevistos (${formatCurrency(plan.plannedReserves, currency)}), aporte FNA (${formatCurrency(plan.fnaContribution, currency)}) y ahorro del semestre (${formatCurrency(plan.universityContribution, currency)}). Los gastos ya pagados (${formatCurrency(plan.paidExpenses, currency)}) no se vuelven a restar porque ya afectan el saldo de las cuentas.\n\nLa deuda de tarjeta (${formatCurrency(cardBalance, currency)}) queda aparte; confirma el saldo de Nómina con el extracto para que esta proyección sea confiable.`;
   }
 
   if (/resumen|como voy|mes|ingres|gasto/.test(q)) {
@@ -147,7 +147,7 @@ export const AssistantView: React.FC = () => {
 
         <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
-            { label: 'Ingreso previsto', value: plan.projectedIncome },
+            { label: 'Ingreso previsto por recibir', value: plan.remainingExpectedIncome },
             { label: 'Ingresos adicionales recibidos', value: plan.supplementalIncome },
             { label: 'Gastos pagados', value: plan.paidExpenses },
             { label: 'Gastos pendientes', value: plan.pendingExpenses },
