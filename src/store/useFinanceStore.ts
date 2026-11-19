@@ -136,6 +136,7 @@ interface FinanceState {
   marcarRecordatorioTarjetaUSD: (id: string) => Promise<void>;
   registrarMovimientoNotificacion: (movimiento: Omit<Movimiento, 'id' | 'created_at'>, notificationId: string, transfer?: { flow: 'entrada' | 'salida'; counterpartId?: string }) => Promise<void>;
   importarMovimientos: (movimientos: Omit<Movimiento, 'id' | 'created_at'>[], opciones?: { actualizarSaldos?: boolean }) => Promise<void>;
+  reconciliarPagosImportados: () => Promise<{ pagosConciliados: number; abonoTarjeta: number }>;
   reconciliarSaldosImportados: () => Promise<{ movimientosAplicados: number; cuentasActualizadas: number }>;
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
@@ -158,6 +159,12 @@ interface FinanceState {
 const LOCAL_STORAGE_KEY = 'fintech_data_v2';
 const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
 const USD_CARD_REMINDER_MARKER = '[recordatorio-pago-tarjeta-usd]';
+const reconciledImportMarker = (movementId: string) => `[conciliado-a-plan:${movementId}]`;
+const reconciliationNote = (movementId: string) => `[conciliado-import:${movementId}]`;
+
+function withoutTransferFlow(notes?: string | null) {
+  return (notes || '').replace(/\[flujo:(?:entrada|salida)\]/g, '').trim();
+}
 
 function getScheduledTransferDestination(notas?: string) {
   return notas?.match(/\[destino:([^\]]+)\]/)?.[1] || null;
@@ -1022,6 +1029,218 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     }));
     get().calcularResumenes();
     persistLocally(get());
+  },
+
+  reconciliarPagosImportados: async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Inicia sesión para conciliar los pagos importados.');
+
+    const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-CO');
+    let pagosConciliados = 0;
+    let abonoTarjeta = 0;
+
+    // A completed loan payment replaces the matching planned expense. The
+    // imported row is retained as an audit reference but becomes balance-neutral.
+    const importedLoanPayments = get().movimientos.filter((movement) =>
+      movement.estado === 'completado' && movement.tipo === 'gasto'
+      && Boolean(importMarker(movement.notas))
+      && !movement.notas?.includes('[conciliado-a-plan:')
+      && normalize(movement.descripcion).includes('pago credito suc virtual')
+    );
+    for (const actual of importedLoanPayments) {
+      const actualAccount = get().cuentas.find((account) => account.id === actual.cuenta_id);
+      const month = actual.fecha.slice(0, 7);
+      const plans = get().movimientos.filter((movement) =>
+        movement.estado === 'pendiente' && movement.tipo === 'gasto'
+        && movement.cuenta_id === actual.cuenta_id
+        && movement.moneda === actual.moneda
+        && movement.fecha.slice(0, 7) === month
+        && Math.abs(movement.monto - actual.monto) <= 1
+        && normalize(movement.descripcion).includes('cuota credito libre inversion')
+      );
+      if (!actualAccount || plans.length !== 1) continue;
+      const plan = plans[0];
+      const previousPlan = {
+        monto: plan.monto,
+        fecha: plan.fecha,
+        descripcion: plan.descripcion,
+        categoria_id: plan.categoria_id,
+        notas: plan.notas,
+        estado: plan.estado,
+      };
+      const planNotes = [plan.notas, reconciliationNote(actual.id)].filter(Boolean).join(' ');
+      const { data: updatedPlan, error: planError } = await supabase.from('movimientos')
+        .update({
+          monto: actual.monto,
+          fecha: actual.fecha,
+          descripcion: `Pago crédito libre inversión · ${actual.descripcion}`,
+          categoria_id: actual.categoria_id,
+          notas: planNotes,
+          estado: 'completado',
+        })
+        .eq('id', plan.id)
+        .eq('user_id', session.user.id)
+        .eq('estado', 'pendiente')
+        .select('*')
+        .maybeSingle();
+      if (planError || !updatedPlan) {
+        throw new Error('No se pudo actualizar la cuota del crédito; el movimiento importado no se modificó.');
+      }
+
+      const referenceNotes = [withoutTransferFlow(actual.notas), reconciledImportMarker(plan.id)].filter(Boolean).join(' ');
+      const { data: updatedActual, error: actualError } = await supabase.from('movimientos')
+        .update({ tipo: 'transferencia', categoria_id: null, notas: referenceNotes })
+        .eq('id', actual.id)
+        .eq('user_id', session.user.id)
+        .eq('tipo', 'gasto')
+        .select('*')
+        .maybeSingle();
+      if (actualError || !updatedActual) {
+        const { data: rolledBackPlan, error: rollbackError } = await supabase.from('movimientos')
+          .update(previousPlan)
+          .eq('id', plan.id)
+          .eq('user_id', session.user.id)
+          .eq('estado', 'completado')
+          .select('id');
+        const rollbackFailed = Boolean(rollbackError) || !rolledBackPlan?.some((row) => row.id === plan.id);
+        if (rollbackFailed) set({ syncError: 'La conciliación del crédito quedó incompleta. Recarga los datos y revisa ese pago.' });
+        throw new Error(rollbackFailed
+          ? 'No se pudo completar ni revertir la conciliación del crédito. Recarga los datos antes de continuar.'
+          : 'No se pudo conciliar el pago del crédito; se revirtió el cambio del compromiso.');
+      }
+      set((state) => ({ movimientos: state.movimientos.map((movement) =>
+        movement.id === plan.id ? updatedPlan as Movimiento
+          : movement.id === actual.id ? updatedActual as Movimiento
+            : movement
+      ) }));
+      pagosConciliados += 1;
+    }
+
+    // A card payment already reduced the bank balance when imported. Link that
+    // same transfer to the card, complete the plan without a second bank debit,
+    // and apply the credit to the liability only when it is newer than its snapshot.
+    const importedCardPayments = get().movimientos.filter((movement) =>
+      movement.estado === 'completado' && movement.tipo === 'transferencia'
+      && Boolean(importMarker(movement.notas))
+      && !movement.notas?.includes('[conciliado-a-plan:')
+      && normalize(movement.descripcion).includes('pago suc virt tc master pesos')
+      && movement.notas?.includes('[flujo:salida]')
+    );
+    for (const actual of importedCardPayments) {
+      const month = actual.fecha.slice(0, 7);
+      const plans = get().movimientos.filter((movement) =>
+        movement.estado === 'pendiente' && movement.tipo === 'transferencia'
+        && movement.notas?.startsWith(CARD_PAYMENT_MARKER)
+        && movement.cuenta_id === actual.cuenta_id
+        && movement.moneda === actual.moneda
+        && movement.fecha.slice(0, 7) === month
+        && movement.monto === actual.monto
+      );
+      if (plans.length !== 1) continue;
+      const plan = plans[0];
+      const cardId = getScheduledTransferDestination(plan.notas || undefined);
+      const card = get().cuentas.find((account) => account.id === cardId);
+      const source = get().cuentas.find((account) => account.id === actual.cuenta_id);
+      if (!card || !source || card.tipo !== 'tarjeta_credito' || card.moneda !== actual.moneda) continue;
+
+      const adjustCardBalance = !card.saldo_fecha || actual.fecha > card.saldo_fecha;
+      const oldCardBalance = Number(card.saldo_actual);
+      const newCardBalance = oldCardBalance + (adjustCardBalance ? actual.monto : 0);
+      const newBalanceDate = adjustCardBalance ? actual.fecha : card.saldo_fecha;
+      if (adjustCardBalance) {
+        const { data, error } = await supabase.from('cuentas')
+          .update({ saldo_actual: newCardBalance, saldo_fecha: newBalanceDate })
+          .eq('id', card.id)
+          .eq('user_id', session.user.id)
+          .eq('saldo_actual', oldCardBalance)
+          .select('id');
+        if (error || !data?.some((row) => row.id === card.id)) {
+          throw new Error('El saldo de la tarjeta cambió en otra sesión. Actualiza los datos y vuelve a conciliar.');
+        }
+      }
+
+      const previousPlan = { monto: plan.monto, fecha: plan.fecha, descripcion: plan.descripcion, notas: plan.notas, estado: plan.estado };
+      const planNotes = [plan.notas, '[flujo:salida]', reconciliationNote(actual.id)].filter(Boolean).join(' ');
+      const { data: updatedPlan, error: planError } = await supabase.from('movimientos')
+        .update({
+          monto: actual.monto,
+          fecha: actual.fecha,
+          descripcion: `Pago tarjeta Mastercard · ${actual.descripcion}`,
+          notas: planNotes,
+          estado: 'completado',
+        })
+        .eq('id', plan.id)
+        .eq('user_id', session.user.id)
+        .eq('estado', 'pendiente')
+        .select('*')
+        .maybeSingle();
+      if (planError || !updatedPlan) {
+        let rollbackFailed = false;
+        if (adjustCardBalance) {
+          const { data, error } = await supabase.from('cuentas')
+            .update({ saldo_actual: oldCardBalance, saldo_fecha: card.saldo_fecha || null })
+            .eq('id', card.id)
+            .eq('user_id', session.user.id)
+            .eq('saldo_actual', newCardBalance)
+            .eq('saldo_fecha', newBalanceDate)
+            .select('id');
+          rollbackFailed = Boolean(error) || !data?.some((row) => row.id === card.id);
+        }
+        if (rollbackFailed) set({ syncError: 'La conciliación de tarjeta quedó incompleta. Recarga los datos y revisa la deuda.' });
+        throw new Error(rollbackFailed
+          ? 'No se pudo completar ni revertir la conciliación de tarjeta. Recarga los datos antes de continuar.'
+          : 'No se pudo completar el pago programado de tarjeta; el saldo se revirtió.');
+      }
+
+      const referenceNotes = [withoutTransferFlow(actual.notas), reconciledImportMarker(plan.id)].filter(Boolean).join(' ');
+      const { data: updatedActual, error: actualError } = await supabase.from('movimientos')
+        .update({ notas: referenceNotes })
+        .eq('id', actual.id)
+        .eq('user_id', session.user.id)
+        .select('*')
+        .maybeSingle();
+      if (actualError || !updatedActual) {
+        const { data: rolledBackPlan, error: rollbackPlanError } = await supabase.from('movimientos')
+          .update(previousPlan)
+          .eq('id', plan.id)
+          .eq('user_id', session.user.id)
+          .eq('estado', 'completado')
+          .select('id');
+        const planRollbackFailed = Boolean(rollbackPlanError) || !rolledBackPlan?.some((row) => row.id === plan.id);
+        let rollbackBalanceError: unknown = null;
+        if (adjustCardBalance) {
+          const { data, error } = await supabase.from('cuentas')
+            .update({ saldo_actual: oldCardBalance, saldo_fecha: card.saldo_fecha || null })
+            .eq('id', card.id)
+            .eq('user_id', session.user.id)
+            .eq('saldo_actual', newCardBalance)
+            .eq('saldo_fecha', newBalanceDate)
+            .select('id');
+          rollbackBalanceError = error || !data?.some((row) => row.id === card.id);
+        }
+        if (planRollbackFailed || rollbackBalanceError) set({ syncError: 'La conciliación de tarjeta quedó incompleta. Recarga los datos y revisa la deuda.' });
+        throw new Error(planRollbackFailed || rollbackBalanceError
+          ? 'No se pudo completar ni revertir la conciliación de tarjeta. Recarga los datos antes de continuar.'
+          : 'No se pudo vincular el movimiento importado; se revirtió la conciliación.');
+      }
+
+      set((state) => ({
+        movimientos: state.movimientos.map((movement) => movement.id === plan.id ? updatedPlan as Movimiento
+          : movement.id === actual.id ? updatedActual as Movimiento : movement),
+        cuentas: state.cuentas.map((account) => account.id === card.id && adjustCardBalance
+          ? { ...account, saldo_actual: newCardBalance, saldo_fecha: newBalanceDate }
+          : account),
+      }));
+      pagosConciliados += 1;
+      if (adjustCardBalance) abonoTarjeta += actual.monto;
+    }
+
+    if (pagosConciliados) {
+      set({ syncError: null });
+      get().calcularResumenes();
+      persistLocally(get());
+    }
+    return { pagosConciliados, abonoTarjeta };
   },
 
   editarMovimiento: async (id, updated) => {

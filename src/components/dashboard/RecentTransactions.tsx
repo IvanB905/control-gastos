@@ -18,7 +18,7 @@ export const RecentTransactions: React.FC = () => {
 
   const now = new Date();
   const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  const filteredMovimientos = movimientos.filter((m) => {
+  const filteredMovimientos = movimientos.filter((m) => !m.notas?.includes('[conciliado-a-plan:')).filter((m) => {
     const matchesSearch = m.descripcion.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = filterType === 'todos' || m.tipo === filterType;
     return matchesSearch && matchesFilter;

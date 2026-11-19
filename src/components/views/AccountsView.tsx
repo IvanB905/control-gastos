@@ -39,8 +39,14 @@ const getAccountIcon = (tipo: TipoCuenta) => {
   }
 };
 
+function movementReferencesAccount(movement: { cuenta_id: string; tipo: string; notas?: string | null }, accountId: string) {
+  if (movement.cuenta_id === accountId) return true;
+  return movement.tipo === 'transferencia'
+    && movement.notas?.match(/\[(?:destino|origen):([0-9a-f-]{36})\]/i)?.[1] === accountId;
+}
+
 export const AccountsView: React.FC = () => {
-  const { cuentas, movimientos, eliminarCuenta, consolidarCuentas, reconciliarSaldosImportados } = useFinanceStore();
+  const { cuentas, movimientos, eliminarCuenta, consolidarCuentas, reconciliarSaldosImportados, reconciliarPagosImportados } = useFinanceStore();
 
   const [isAccountModalOpen, setAccountModalOpen] = useState(false);
   const [isTransferModalOpen, setTransferModalOpen] = useState(false);
@@ -49,6 +55,7 @@ export const AccountsView: React.FC = () => {
   const [mergingCuentaId, setMergingCuentaId] = useState<string | null>(null);
   const [mergeMessage, setMergeMessage] = useState<string | null>(null);
   const [isReconcilingBalances, setIsReconcilingBalances] = useState(false);
+  const [isReconcilingPayments, setIsReconcilingPayments] = useState(false);
   const importedMovementsToApply = movimientos.filter((movimiento) => {
     if (!importMarker(movimiento.notas) || movimiento.estado !== 'completado') return false;
     const cuenta = cuentas.find((item) => item.id === movimiento.cuenta_id);
@@ -70,9 +77,24 @@ export const AccountsView: React.FC = () => {
     }
   };
 
+  const handleReconcilePayments = async () => {
+    setIsReconcilingPayments(true);
+    setMergeMessage(null);
+    try {
+      const result = await reconciliarPagosImportados();
+      setMergeMessage(result.pagosConciliados
+        ? `Conciliados ${result.pagosConciliados} pagos importados.${result.abonoTarjeta ? ` Abono aplicado a Mastercard: ${formatCurrency(result.abonoTarjeta, 'COP')}.` : ''} Los pagos del crédito se registran una sola vez; actualiza su saldo cuando tengas el capital e intereses del extracto.`
+        : 'No encontré movimientos importados que coincidan con compromisos pendientes. No se modificaron pagos.');
+    } catch (error) {
+      setMergeMessage(error instanceof Error ? error.message : 'No se pudieron conciliar los pagos importados.');
+    } finally {
+      setIsReconcilingPayments(false);
+    }
+  };
+
   const movementCounts = new Map(cuentas.map((cuenta) => [
     cuenta.id,
-    movimientos.filter((movimiento) => movimiento.cuenta_id === cuenta.id).length,
+    movimientos.filter((movimiento) => movementReferencesAccount(movimiento, cuenta.id)).length,
   ]));
   const accountGroups = new Map<string, typeof cuentas>();
   cuentas.forEach((cuenta) => {
@@ -128,8 +150,8 @@ export const AccountsView: React.FC = () => {
   const now = new Date();
   const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const movimientosCuenta = (selectedCuentaId
-    ? movimientos.filter((m) => m.cuenta_id === selectedCuentaId)
-    : movimientos).sort((a, b) => Number(a.fecha > today) - Number(b.fecha > today)
+    ? movimientos.filter((m) => movementReferencesAccount(m, selectedCuentaId))
+    : movimientos).filter((movement) => !movement.notas?.includes('[conciliado-a-plan:')).sort((a, b) => Number(a.fecha > today) - Number(b.fecha > today)
       || b.fecha.localeCompare(a.fecha)
       || (b.created_at || '').localeCompare(a.created_at || '')
       || b.id.localeCompare(a.id));
@@ -150,6 +172,15 @@ export const AccountsView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => void handleReconcilePayments()}
+            disabled={isReconcilingPayments}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-950/60 text-xs font-semibold text-blue-800 dark:text-blue-200 transition-colors disabled:cursor-wait disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isReconcilingPayments ? 'animate-spin' : ''}`} />
+            {isReconcilingPayments ? 'Conciliando…' : 'Conciliar pagos importados'}
+          </button>
           <button
             onClick={() => setTransferModalOpen(true)}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-colors shadow-xs cursor-pointer"
@@ -341,7 +372,7 @@ export const AccountsView: React.FC = () => {
         <h3 className="text-sm font-bold text-zinc-900 dark:text-white tracking-tight mb-4">
           {selectedCuenta 
             ? `Movimientos de ${selectedCuenta.nombre} (${movimientosCuenta.length})` 
-            : `Todos los Movimientos de tus Cuentas (${movimientos.length})`}
+            : `Todos los Movimientos de tus Cuentas (${movimientosCuenta.length})`}
         </h3>
 
         {movimientosCuenta.length === 0 ? (

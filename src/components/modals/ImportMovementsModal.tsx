@@ -53,7 +53,7 @@ function formatAmount(amount: number, currency: TipoMoneda) {
 }
 
 export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOpen, onClose }) => {
-  const { cuentas, categorias, movimientos, importarMovimientos } = useFinanceStore();
+  const { cuentas, categorias, movimientos, importarMovimientos, reconciliarPagosImportados } = useFinanceStore();
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [fileName, setFileName] = useState('');
@@ -62,6 +62,7 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [savedCount, setSavedCount] = useState<number | null>(null);
+  const [reconciliationNotice, setReconciliationNotice] = useState('');
   const [updateBalances, setUpdateBalances] = useState(true);
 
   const groups = useMemo<AccountGroup[]>(() => {
@@ -95,6 +96,7 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
     event.target.value = '';
     setSaveError('');
     setSavedCount(null);
+    setReconciliationNotice('');
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
       setRows([]);
@@ -163,6 +165,14 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
 
       await importarMovimientos(selectedRows, { actualizarSaldos: updateBalances });
       setSavedCount(selectedRows.length);
+      try {
+        const result = await reconciliarPagosImportados();
+        if (result.pagosConciliados > 0) {
+          setReconciliationNotice(` También concilié ${result.pagosConciliados} pagos; abono a Mastercard: ${formatAmount(result.abonoTarjeta, 'COP')}.`);
+        }
+      } catch {
+        setReconciliationNotice(' Los movimientos se importaron, pero no se pudieron conciliar los pagos programados. Revísalos en Cuentas.');
+      }
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'No se pudo guardar la importación.');
     } finally {
@@ -271,7 +281,7 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
           )}
 
           {saveError && <p role="alert" className="text-xs text-rose-600">{saveError}</p>}
-          {savedCount !== null && <p className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400"><Check className="h-4 w-4" /> Importados {savedCount} movimientos.</p>}
+          {savedCount !== null && <p className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400"><Check className="h-4 w-4" /> Importados {savedCount} movimientos.{reconciliationNotice}</p>}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-zinc-100 p-4 dark:border-zinc-800">

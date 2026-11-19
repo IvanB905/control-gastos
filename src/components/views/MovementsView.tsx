@@ -39,7 +39,7 @@ export const MovementsView: React.FC = () => {
   // Apply filters, showing actual/past movements before future projections.
   const now = new Date();
   const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  const filteredMovimientos = movimientos.filter((m) => {
+  const filteredMovimientos = movimientos.filter((m) => !m.notas?.includes('[conciliado-a-plan:')).filter((m) => {
     const matchesSearch = m.descripcion.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesTipo = tipoFiltro === 'todos' || m.tipo === tipoFiltro;
     const matchesCuenta = cuentaFiltro === 'todas' || m.cuenta_id === cuentaFiltro;
