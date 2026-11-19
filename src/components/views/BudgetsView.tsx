@@ -18,6 +18,7 @@ import type { Movimiento, Presupuesto } from '../../types';
 import { BudgetModal } from '../modals/BudgetModal';
 import { SavingsGoalModal } from '../modals/SavingsGoalModal';
 import { PaymentCalendar } from './PaymentCalendar';
+import { isPlannedSavingsReserve } from '../../lib/financialPlan';
 
 const normalizeText = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
@@ -94,8 +95,11 @@ export const BudgetsView: React.FC = () => {
   const gastosPagados = gastosDelMes
     .filter((movimiento) => movimiento.estado === 'completado')
     .reduce((total, movimiento) => total + movimiento.monto, 0);
+  const reservaImprevistos = gastosDelMes
+    .filter((movimiento) => isPlannedSavingsReserve(movimiento, categorias))
+    .reduce((total, movimiento) => total + movimiento.monto, 0);
   const gastosPendientes = gastosDelMes
-    .filter((movimiento) => movimiento.estado === 'pendiente')
+    .filter((movimiento) => movimiento.estado === 'pendiente' && !isPlannedSavingsReserve(movimiento, categorias))
     .reduce((total, movimiento) => total + movimiento.monto, 0);
   const pagosTarjetaPendientes = movimientos
     .filter((movimiento) => {
@@ -196,6 +200,7 @@ export const BudgetsView: React.FC = () => {
             </div>
             {gastoSinCategoriaPresupuestada > 0 && <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Gasto sin categoría presupuestada: <strong>{formatCurrency(gastoSinCategoriaPresupuestada, moneda)}</strong></p>}
             <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Pendiente por pagar (gastos): <strong>{formatCurrency(gastosPendientes, moneda)}</strong></p>
+            {reservaImprevistos > 0 && <p className="text-[11px] text-indigo-600 dark:text-indigo-300">Reserva para imprevistos (separada de las facturas): <strong>{formatCurrency(reservaImprevistos, moneda)}</strong></p>}
             {pagosTarjetaPendientes > 0 && <p className="text-[11px] text-blue-700 dark:text-blue-300">Pago de tarjeta programado (transferencia): <strong>{formatCurrency(pagosTarjetaPendientes, moneda)}</strong>. Se suma a “Por pagar” del inicio, pero no se cuenta como gasto.</p>}
           </div>
         </div>

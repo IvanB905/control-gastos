@@ -3,6 +3,7 @@ import { AlertTriangle, CalendarDays, CheckCircle2, Clock3, CreditCard, RefreshC
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { formatCurrency, formatDate, countsTowardAvailableBalance } from '../../lib/utils';
 import type { Movimiento } from '../../types';
+import { isPlannedSavingsReserve } from '../../lib/financialPlan';
 
 const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
 const USD_CARD_REMINDER_MARKER = '[recordatorio-pago-tarjeta-usd]';
@@ -29,7 +30,7 @@ function getDueStatus(date: string, today: Date, completed: boolean) {
 }
 
 export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ month, year }) => {
-  const { cuentas, movimientos, marcarPagoPendiente, programarPagoTarjeta, programarRecordatorioTarjetaUSD, actualizarFechaRecordatorioTarjetaUSD, marcarRecordatorioTarjetaUSD } = useFinanceStore();
+  const { cuentas, categorias, movimientos, marcarPagoPendiente, programarPagoTarjeta, programarRecordatorioTarjetaUSD, actualizarFechaRecordatorioTarjetaUSD, marcarRecordatorioTarjetaUSD } = useFinanceStore();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [usdAmounts, setUsdAmounts] = useState<Record<string, string>>({});
   const [sources, setSources] = useState<Record<string, string>>({});
@@ -45,8 +46,8 @@ export const PaymentCalendar: React.FC<{ month: number; year: number }> = ({ mon
   const items = useMemo(() => movimientos
     .filter((movement) => movement.fecha >= start && movement.fecha <= end && (
       movement.tipo === 'gasto' || (movement.tipo === 'transferencia' && (movement.notas?.startsWith(CARD_PAYMENT_MARKER) || movement.notas?.startsWith(USD_CARD_REMINDER_MARKER)))
-    ))
-    .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.descripcion.localeCompare(b.descripcion)), [movimientos, start, end]);
+    ) && !isPlannedSavingsReserve(movement, categorias))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.descripcion.localeCompare(b.descripcion)), [categorias, movimientos, start, end]);
 
   const oldMinimumFor = (cardId: string) => {
     const card = cuentas.find((account) => account.id === cardId);

@@ -3,12 +3,13 @@ import { TrendingUp, ArrowDownLeft, ArrowUpRight, Clock3 } from 'lucide-react';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
 import { formatCurrency } from '../../lib/utils';
+import { isPlannedSavingsReserve } from '../../lib/financialPlan';
 
 const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
 const USD_CARD_REMINDER_MARKER = '[recordatorio-pago-tarjeta-usd]';
 
 export const KpiCards: React.FC = () => {
-  const { movimientos } = useFinanceStore();
+  const { movimientos, categorias } = useFinanceStore();
   const { moneda, selectedMonth, selectedYear } = useAppStore();
 
   const resumen = movimientos.reduce((totals, movimiento) => {
@@ -24,7 +25,7 @@ export const KpiCards: React.FC = () => {
     }
     if (movimiento.tipo === 'ingreso' && movimiento.estado === 'completado') totals.total_ingresos += movimiento.monto;
     if (movimiento.tipo === 'gasto' && movimiento.estado === 'completado') totals.total_gastos += movimiento.monto;
-    if (movimiento.tipo === 'gasto' && movimiento.estado === 'pendiente') totals.gastos_pendientes += movimiento.monto;
+    if (movimiento.tipo === 'gasto' && movimiento.estado === 'pendiente' && !isPlannedSavingsReserve(movimiento, categorias)) totals.gastos_pendientes += movimiento.monto;
     return totals;
   }, { total_ingresos: 0, total_gastos: 0, gastos_pendientes: 0 });
   const balance = resumen.total_ingresos - resumen.total_gastos;

@@ -6,7 +6,7 @@ import { calculateMonthlyPlan } from '../../lib/financialPlan';
 import { countsTowardAvailableBalance, formatCurrency, MESES } from '../../lib/utils';
 
 export const DailySpendingProjection: React.FC = () => {
-  const { cuentas, movimientos, metasAhorro } = useFinanceStore();
+  const { cuentas, categorias, movimientos, metasAhorro } = useFinanceStore();
   const { moneda, selectedMonth, selectedYear } = useAppStore();
   const now = new Date();
   const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
@@ -15,13 +15,13 @@ export const DailySpendingProjection: React.FC = () => {
     || (selectedYear === now.getFullYear() && selectedMonth > now.getMonth() + 1);
 
   const plan = useMemo(
-    () => calculateMonthlyPlan(cuentas, metasAhorro, movimientos, selectedMonth, selectedYear, moneda),
-    [cuentas, metasAhorro, movimientos, selectedMonth, selectedYear, moneda],
+    () => calculateMonthlyPlan(cuentas, metasAhorro, movimientos, categorias, selectedMonth, selectedYear, moneda),
+    [cuentas, categorias, metasAhorro, movimientos, selectedMonth, selectedYear, moneda],
   );
 
   const liquidBalance = cuentas
     .filter((account) => account.moneda === moneda && countsTowardAvailableBalance(account))
-    .reduce((sum, account) => sum + Math.max(account.saldo_actual, 0), 0);
+    .reduce((sum, account) => sum + account.saldo_actual, 0);
   const cardDebt = cuentas
     .filter((account) => account.moneda === moneda && account.tipo === 'tarjeta_credito' && account.saldo_actual < 0)
     .reduce((sum, account) => sum + Math.abs(account.saldo_actual), 0);
@@ -63,7 +63,7 @@ export const DailySpendingProjection: React.FC = () => {
           </p>
         </div>
         <div className="rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70">
-          <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Saldo líquido actual</p>
+          <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Saldo líquido neto (sin FNA)</p>
           <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">{formatCurrency(liquidBalance, moneda)}</p>
         </div>
         <div className="col-span-2 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70 sm:col-span-1">
@@ -71,6 +71,13 @@ export const DailySpendingProjection: React.FC = () => {
           <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">{formatCurrency(plan.estimatedIncome, moneda)}</p>
         </div>
       </div>
+
+      {(plan.supplementalIncome > 0 || plan.plannedReserves > 0) && (
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+          {plan.supplementalIncome > 0 && <span>Ingresos adicionales recibidos: <strong>{formatCurrency(plan.supplementalIncome, moneda)}</strong></span>}
+          {plan.plannedReserves > 0 && <span>Reserva de imprevistos separada: <strong>{formatCurrency(plan.plannedReserves, moneda)}</strong></span>}
+        </div>
+      )}
 
       {shortfall > 0 && (
         <p role="status" className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] leading-4 text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-200">
@@ -86,7 +93,7 @@ export const DailySpendingProjection: React.FC = () => {
       )}
 
       <p className="mt-3 text-[10px] leading-4 text-zinc-400">
-        Estimación basada en ingresos mensuales previstos, gastos pagados y pendientes, aporte al FNA y ahorro universitario. El saldo líquido excluye el FNA; no es un saldo bancario ni incluye compromisos que aún no estén registrados.
+        Proyección mensual basada en ingresos previstos y adicionales, gastos pagados y pendientes, reservas, aporte al FNA y ahorro universitario. El saldo líquido neto suma las cuentas operativas e incluye sus saldos negativos; excluye el FNA y las tarjetas.
       </p>
     </section>
   );
