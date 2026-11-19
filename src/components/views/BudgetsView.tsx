@@ -4,6 +4,7 @@ import {
   PieChart, 
   Target, 
   Trash2, 
+  Pencil,
   TrendingUp, 
   AlertTriangle, 
   CheckCircle2,
@@ -13,7 +14,7 @@ import {
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
 import { formatCurrency, formatDate } from '../../lib/utils';
-import type { Movimiento } from '../../types';
+import type { Movimiento, Presupuesto } from '../../types';
 import { BudgetModal } from '../modals/BudgetModal';
 import { SavingsGoalModal } from '../modals/SavingsGoalModal';
 import { PaymentCalendar } from './PaymentCalendar';
@@ -49,6 +50,28 @@ export const BudgetsView: React.FC = () => {
   const [isGoalModalOpen, setGoalModalOpen] = useState(false);
   const [abonoMetaId, setAbonoMetaId] = useState<string | null>(null);
   const [montoAbono, setMontoAbono] = useState('');
+  const [presupuestoEnEdicion, setPresupuestoEnEdicion] = useState<Presupuesto | null>(null);
+  const [errorPresupuesto, setErrorPresupuesto] = useState('');
+  const [eliminandoPresupuestoId, setEliminandoPresupuestoId] = useState<string | null>(null);
+
+  const abrirNuevoPresupuesto = () => {
+    setPresupuestoEnEdicion(null);
+    setErrorPresupuesto('');
+    setBudgetModalOpen(true);
+  };
+
+  const eliminarPresupuestoConfirmado = async (presupuesto: Presupuesto, nombreCategoria: string) => {
+    if (!window.confirm(`¿Eliminar el presupuesto de ${nombreCategoria}? Los movimientos registrados no se eliminarán.`)) return;
+    setEliminandoPresupuestoId(presupuesto.id);
+    setErrorPresupuesto('');
+    try {
+      await eliminarPresupuesto(presupuesto.id);
+    } catch (error) {
+      setErrorPresupuesto(error instanceof Error ? error.message : 'No se pudo eliminar el presupuesto.');
+    } finally {
+      setEliminandoPresupuestoId(null);
+    }
+  };
 
   // Filtrar presupuestos para la moneda y el periodo seleccionados.
   const presupuestosFiltrados = presupuestos.filter(
@@ -123,7 +146,7 @@ export const BudgetsView: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setBudgetModalOpen(true)}
+            onClick={abrirNuevoPresupuesto}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -234,6 +257,8 @@ export const BudgetsView: React.FC = () => {
           </div>
         </div>
 
+        {errorPresupuesto && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{errorPresupuesto}</p>}
+
         {presupuestosFiltrados.length === 0 ? (
           <div className="py-10 text-center text-zinc-400 text-xs">
             No has configurado presupuestos en {moneda}. Haz clic en "+ Fijar Presupuesto" para comenzar.
@@ -264,13 +289,29 @@ export const BudgetsView: React.FC = () => {
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => eliminarPresupuesto(p.id)}
-                      className="p-1 text-zinc-300 hover:text-red-500 transition-colors cursor-pointer"
-                      title="Eliminar presupuesto"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setErrorPresupuesto('');
+                          setPresupuestoEnEdicion(p);
+                          setBudgetModalOpen(true);
+                        }}
+                        className="p-1.5 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer"
+                        title="Editar presupuesto"
+                        aria-label={`Editar presupuesto de ${cat?.nombre || 'categoría'}`}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => eliminarPresupuestoConfirmado(p, cat?.nombre || 'esta categoría')}
+                        disabled={eliminandoPresupuestoId === p.id}
+                        className="p-1.5 text-zinc-400 hover:text-red-500 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Eliminar presupuesto"
+                        aria-label={`Eliminar presupuesto de ${cat?.nombre || 'categoría'}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Numbers */}
@@ -435,7 +476,11 @@ export const BudgetsView: React.FC = () => {
       {/* Modals */}
       <BudgetModal
         isOpen={isBudgetModalOpen}
-        onClose={() => setBudgetModalOpen(false)}
+        presupuesto={presupuestoEnEdicion}
+        onClose={() => {
+          setBudgetModalOpen(false);
+          setPresupuestoEnEdicion(null);
+        }}
       />
 
       <SavingsGoalModal

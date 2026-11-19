@@ -1,16 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, PieChart } from 'lucide-react';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { useAppStore } from '../../store/useAppStore';
-import type { TipoMoneda } from '../../types';
+import type { Presupuesto, TipoMoneda } from '../../types';
 
 interface BudgetModalProps {
   isOpen: boolean;
   onClose: () => void;
+  presupuesto?: Presupuesto | null;
 }
 
-export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose }) => {
-  const { categorias, agregarPresupuesto } = useFinanceStore();
+export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, presupuesto = null }) => {
+  const { categorias, agregarPresupuesto, editarPresupuesto } = useFinanceStore();
   const { moneda: monedaGlobal, selectedMonth, selectedYear } = useAppStore();
 
   const categoriasGasto = categorias.filter((c) => c.tipo === 'gasto');
@@ -18,25 +19,57 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose }) => 
   const [categoriaId, setCategoriaId] = useState(categoriasGasto[0]?.id || '');
   const [moneda, setMoneda] = useState<TipoMoneda>(monedaGlobal);
   const [montoLimite, setMontoLimite] = useState('');
+  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCategoriaId(presupuesto?.categoria_id || categoriasGasto[0]?.id || '');
+    setMoneda(presupuesto?.moneda || monedaGlobal);
+    setMontoLimite(presupuesto ? String(presupuesto.monto_limite) : '');
+    setError('');
+  }, [
+    isOpen,
+    presupuesto?.id,
+    presupuesto?.categoria_id,
+    presupuesto?.monto_limite,
+    presupuesto?.moneda,
+    categoriasGasto[0]?.id,
+    monedaGlobal,
+  ]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = parseFloat(montoLimite);
-    if (isNaN(parsed) || parsed <= 0 || !categoriaId) return;
+    if (isNaN(parsed) || parsed <= 0 || !categoriaId) {
+      setError('Selecciona una categoría y un límite mayor que cero.');
+      return;
+    }
 
-    agregarPresupuesto({
-      user_id: 'user1',
-      categoria_id: categoriaId,
-      monto_limite: parsed,
-      moneda,
-      mes: selectedMonth,
-      anio: selectedYear,
-    });
-
-    setMontoLimite('');
-    onClose();
+    setIsSaving(true);
+    setError('');
+    try {
+      if (presupuesto) {
+        await editarPresupuesto(presupuesto.id, { categoria_id: categoriaId, monto_limite: parsed, moneda });
+      } else {
+        await agregarPresupuesto({
+          user_id: 'user1',
+          categoria_id: categoriaId,
+          monto_limite: parsed,
+          moneda,
+          mes: selectedMonth,
+          anio: selectedYear,
+        });
+      }
+      setMontoLimite('');
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'No se pudo guardar el presupuesto.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -54,11 +87,11 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose }) => 
             <PieChart className="w-4 h-4" />
           </div>
           <h3 className="text-base font-bold text-zinc-900 dark:text-white tracking-tight">
-            Fijar Presupuesto Mensual
+            {presupuesto ? 'Editar Presupuesto Mensual' : 'Fijar Presupuesto Mensual'}
           </h3>
         </div>
         <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-5">
-          Establece un límite de gasto para una categoría en el mes
+          {presupuesto ? 'Actualiza la categoría o el límite de este mes.' : 'Establece un límite de gasto para una categoría en el mes'}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -134,18 +167,21 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose }) => 
             <button
               type="button"
               onClick={onClose}
+              disabled={isSaving}
               className="px-4 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
+              disabled={isSaving}
               className="px-5 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
             >
-              Guardar Presupuesto
+              {isSaving ? 'Guardando…' : presupuesto ? 'Guardar Cambios' : 'Guardar Presupuesto'}
             </button>
           </div>
         </form>
+        {error && <p role="alert" className="mt-3 text-xs text-rose-600 dark:text-rose-400">{error}</p>}
       </div>
     </div>
   );

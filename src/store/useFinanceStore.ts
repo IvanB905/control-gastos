@@ -146,6 +146,7 @@ interface FinanceState {
   consolidarCuentas: (origenId: string, destinoId: string) => Promise<number>;
   realizarTransferencia: (origenId: string, destinoId: string, monto: number, descripcion: string, fecha: string) => Promise<void>;
   agregarPresupuesto: (presupuesto: Omit<Presupuesto, 'id'>) => Promise<void>;
+  editarPresupuesto: (id: string, updated: Pick<Presupuesto, 'categoria_id' | 'monto_limite' | 'moneda'>) => Promise<void>;
   eliminarPresupuesto: (id: string) => Promise<void>;
   agregarMetaAhorro: (meta: Omit<MetaAhorro, 'id'>) => Promise<void>;
   abonarAMetaAhorro: (id: string, monto: number) => Promise<void>;
@@ -1613,29 +1614,76 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
   },
 
   agregarPresupuesto: async (p) => {
-    const id = `p_${Date.now()}`;
-    const nuevoPresupuesto: Presupuesto = { ...p, id, gasto_actual: 0 };
+    if (!Number.isFinite(p.monto_limite) || p.monto_limite <= 0) throw new Error('El límite debe ser mayor que cero.');
+    const duplicate = get().presupuestos.some((item) => item.categoria_id === p.categoria_id && item.moneda === p.moneda && item.mes === p.mes && item.anio === p.anio);
+    if (duplicate) throw new Error('Ya existe un presupuesto para esta categoría y este mes.');
+    const { data: { session } } = await supabase.auth.getSession();
+    let nuevoPresupuesto: Presupuesto = { ...p, id: `p_${Date.now()}`, gasto_actual: 0 };
+
+    if (session) {
+      const { data, error } = await supabase.from('presupuestos')
+        .insert([{ ...p, user_id: session.user.id }])
+        .select('*')
+        .single();
+      if (error || !data) {
+        console.error('No se pudo crear el presupuesto en Supabase:', error?.message || 'sin fila devuelta');
+        throw new Error('No se guardó el presupuesto en la nube. Revisa tu conexión e inténtalo de nuevo.');
+      }
+      nuevoPresupuesto = { ...data as Presupuesto, moneda: (data as Presupuesto).moneda || p.moneda };
+    }
+
     set((state) => ({ presupuestos: [...state.presupuestos, nuevoPresupuesto] }));
     get().calcularResumenes();
     persistLocally(get());
+  },
 
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await supabase.from('presupuestos').insert([{ ...p, user_id: session.user.id }]);
+  editarPresupuesto: async (id, updated) => {
+    const previous = get().presupuestos.find((item) => item.id === id);
+    if (!previous) throw new Error('No se encontró el presupuesto. Actualiza la lista e inténtalo de nuevo.');
+    if (!Number.isFinite(updated.monto_limite) || updated.monto_limite <= 0) throw new Error('El límite debe ser mayor que cero.');
+    const duplicate = get().presupuestos.some((item) => item.id !== id
+      && item.categoria_id === updated.categoria_id
+      && item.moneda === updated.moneda
+      && item.mes === previous.mes
+      && item.anio === previous.anio);
+    if (duplicate) throw new Error('Ya existe otro presupuesto para esta categoría y este mes.');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    let actualizado: Presupuesto = { ...previous, ...updated };
+    if (session && !id.startsWith('p_')) {
+      const { data, error } = await supabase.from('presupuestos')
+        .update(updated)
+        .eq('id', id)
+        .eq('user_id', session.user.id)
+        .select('*')
+        .single();
+      if (error || !data) {
+        console.error('No se pudo editar el presupuesto en Supabase:', error?.message || 'sin fila devuelta');
+        throw new Error('No se guardaron los cambios en la nube. Revisa tu conexión e inténtalo de nuevo.');
       }
-    } catch (e) {}
+      actualizado = { ...data as Presupuesto, moneda: (data as Presupuesto).moneda || updated.moneda };
+    }
+
+    set((state) => ({ presupuestos: state.presupuestos.map((item) => item.id === id ? actualizado : item) }));
+    get().calcularResumenes();
+    persistLocally(get());
   },
 
   eliminarPresupuesto: async (id) => {
-    set((state) => ({
-      presupuestos: state.presupuestos.filter((p) => p.id !== id),
-    }));
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session && !id.startsWith('p_')) {
+      const { data, error } = await supabase.from('presupuestos')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', session.user.id)
+        .select('id');
+      if (error || !data?.length) {
+        console.error('No se pudo eliminar el presupuesto en Supabase:', error?.message || 'sin fila eliminada');
+        throw new Error('No se eliminó el presupuesto en la nube. Actualiza la lista e inténtalo de nuevo.');
+      }
+    }
+    set((state) => ({ presupuestos: state.presupuestos.filter((p) => p.id !== id) }));
     persistLocally(get());
-
-    try {
-      await supabase.from('presupuestos').delete().eq('id', id);
-    } catch (e) {}
   },
 
   agregarMetaAhorro: async (meta) => {
