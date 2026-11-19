@@ -53,7 +53,7 @@ export const DailySpendingProjection: React.FC = () => {
         </p>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         <div className="rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70">
           <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Resto proyectado del mes</p>
           <p className={`mt-1 text-sm font-bold ${shortfall > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-900 dark:text-white'}`}>
@@ -67,6 +67,22 @@ export const DailySpendingProjection: React.FC = () => {
         <div className="col-span-2 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70 sm:col-span-1">
           <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Ingreso previsto por recibir</p>
           <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">{formatCurrency(plan.remainingExpectedIncome, moneda)}</p>
+        </div>
+        <div className="rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70">
+          <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Compromisos pendientes</p>
+          <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">−{formatCurrency(plan.pendingExpenses, moneda)}</p>
+        </div>
+        <div className="rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70">
+          <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Reserva de imprevistos</p>
+          <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">−{formatCurrency(plan.plannedReserves, moneda)}</p>
+        </div>
+        <div className="rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70">
+          <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Aporte mensual FNA</p>
+          <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">−{formatCurrency(plan.fnaContribution, moneda)}</p>
+        </div>
+        <div className="rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70">
+          <p className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">Ahorro universidad</p>
+          <p className="mt-1 text-sm font-bold text-zinc-900 dark:text-white">−{formatCurrency(plan.universityContribution, moneda)}</p>
         </div>
       </div>
 
@@ -91,7 +107,7 @@ export const DailySpendingProjection: React.FC = () => {
       )}
 
       <p className="mt-3 text-[10px] leading-4 text-zinc-400">
-        Es una proyección, no dinero disponible hoy: parte del saldo líquido actual, suma el ingreso previsto que aún no aparece en movimientos y resta compromisos pendientes y ahorros separados. Los gastos pagados ya están reflejados en el saldo actual. Se excluyen el FNA y las tarjetas.
+        Es una proyección, no dinero disponible hoy: saldo líquido actual + ingreso previsto aún no recibido − compromisos pendientes − reservas. Los gastos pagados ya deben estar reflejados en los saldos de las cuentas. El saldo líquido excluye el FNA y las tarjetas; el aporte mensual al FNA sí se reserva en esta proyección.
       </p>
     </section>
   );

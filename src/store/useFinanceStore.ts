@@ -162,6 +162,7 @@ const CARD_PAYMENT_MARKER = '[calendario-pago-tarjeta]';
 const USD_CARD_REMINDER_MARKER = '[recordatorio-pago-tarjeta-usd]';
 const reconciledImportMarker = (movementId: string) => `[conciliado-a-plan:${movementId}]`;
 const reconciliationNote = (movementId: string) => `[conciliado-import:${movementId}]`;
+const linkedPaidPlanMarker = (movementId: string) => `[pago-vinculado-plan:${movementId}]`;
 
 function withoutTransferFlow(notes?: string | null) {
   return (notes || '').replace(/\[flujo:(?:entrada|salida)\]/g, '').trim();
@@ -1106,6 +1107,112 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     let pagosConciliados = 0;
     let abonoTarjeta = 0;
 
+    // A COP debit labelled for the USD Mastercard confirms that the due-date
+    // reminder was attended, but it does not reveal the USD amount or FX rate.
+    // Close only the matching reminder; never alter either card balance here.
+    const importedDollarPayments = get().movimientos.filter((movement) =>
+      movement.estado === 'completado' && movement.tipo === 'transferencia'
+      && movement.moneda === 'COP'
+      && Boolean(importMarker(movement.notas))
+      && movement.notas?.includes('[flujo:salida]')
+      && /pago (?:suc virt|autom) tc master dolar/.test(normalize(movement.descripcion))
+    );
+    for (const actual of importedDollarPayments) {
+      const usdCards = get().cuentas.filter((account) => account.tipo === 'tarjeta_credito'
+        && account.moneda === 'USD' && normalize(account.nombre).includes('mastercard'));
+      if (usdCards.length !== 1) continue;
+      const card = usdCards[0];
+      const reminders = get().movimientos.filter((movement) =>
+        movement.estado === 'pendiente' && movement.tipo === 'transferencia'
+        && movement.notas?.startsWith(USD_CARD_REMINDER_MARKER)
+        && getScheduledTransferDestination(movement.notas) === card.id
+        && movement.fecha.slice(0, 7) === actual.fecha.slice(0, 7)
+      );
+      if (reminders.length !== 1) continue;
+      const reminder = reminders[0];
+      const { data, error } = await supabase.from('movimientos')
+        .update({ estado: 'completado', notas: [reminder.notas, reconciliationNote(actual.id)].filter(Boolean).join(' ') })
+        .eq('id', reminder.id)
+        .eq('user_id', session.user.id)
+        .eq('estado', 'pendiente')
+        .select('*')
+        .maybeSingle();
+      if (error || !data) throw new Error('No se pudo cerrar el recordatorio USD que coincide con el pago importado.');
+      set((state) => ({ movimientos: state.movimientos.map((movement) => movement.id === reminder.id ? data as Movimiento : movement) }));
+      pagosConciliados += 1;
+    }
+
+    // Older imports paired a COP debit labelled "MASTER DOLAR" with the COP
+    // card just because the bank debit itself was in COP. That creates a false
+    // credit against the pesos card. Neutralize only the generated counterpart
+    // with its exact import fingerprint; leave the real COP bank debit intact.
+    const importedDollarCardPayments = get().movimientos.filter((movement) =>
+      movement.estado === 'completado' && movement.tipo === 'transferencia'
+      && movement.moneda === 'COP'
+      && Boolean(importMarker(movement.notas))
+      && !movement.notas?.includes('[flujo:entrada]')
+      && /pago (?:suc virt|autom) tc master dolar/.test(normalize(movement.descripcion))
+    );
+    for (const actual of importedDollarCardPayments) {
+      const fingerprint = importMarker(actual.notas);
+      if (!fingerprint) continue;
+      const pairs = get().movimientos.filter((movement) =>
+        movement.estado === 'completado' && movement.tipo === 'transferencia'
+        && movement.moneda === 'COP'
+        && movement.monto === actual.monto
+        && importMarker(movement.notas) === `transfer-${fingerprint}`
+        && movement.notas?.includes('[flujo:entrada]')
+        && normalize(movement.descripcion).includes('master dolar')
+        && get().cuentas.some((account) => account.id === movement.cuenta_id
+          && account.tipo === 'tarjeta_credito' && account.moneda === 'COP')
+      );
+      if (pairs.length !== 1) continue;
+
+      const incorrectPair = pairs[0];
+      const card = get().cuentas.find((account) => account.id === incorrectPair.cuenta_id);
+      if (!card) continue;
+      const adjustsBalance = !card.saldo_fecha || actual.fecha > card.saldo_fecha;
+      const oldBalance = Number(card.saldo_actual);
+      const correctedBalance = oldBalance - (adjustsBalance ? incorrectPair.monto : 0);
+      if (adjustsBalance) {
+        const { data, error } = await supabase.from('cuentas')
+          .update({ saldo_actual: correctedBalance })
+          .eq('id', card.id)
+          .eq('user_id', session.user.id)
+          .eq('saldo_actual', oldBalance)
+          .select('id');
+        if (error || !data?.some((row) => row.id === card.id)) {
+          throw new Error('No pude corregir con seguridad el abono USD asignado por error a la tarjeta en pesos. Actualiza los saldos y vuelve a intentar.');
+        }
+      }
+
+      const correctedNotes = [withoutTransferFlow(incorrectPair.notas), reconciledImportMarker(actual.id), '[abono-usd-no-convertido]'].filter(Boolean).join(' ');
+      const { data: correctedMovement, error: pairError } = await supabase.from('movimientos')
+        .update({ notas: correctedNotes })
+        .eq('id', incorrectPair.id)
+        .eq('user_id', session.user.id)
+        .select('*')
+        .maybeSingle();
+      if (pairError || !correctedMovement) {
+        if (adjustsBalance) {
+          const { error: rollbackError } = await supabase.from('cuentas')
+            .update({ saldo_actual: oldBalance })
+            .eq('id', card.id)
+            .eq('user_id', session.user.id)
+            .eq('saldo_actual', correctedBalance);
+          if (rollbackError) set({ syncError: 'La corrección del pago en dólares quedó incompleta. Recarga y revisa el saldo de Mastercard en pesos.' });
+        }
+        throw new Error('No se pudo corregir la contraparte de tarjeta en pesos.');
+      }
+      set((state) => ({
+        movimientos: state.movimientos.map((movement) => movement.id === incorrectPair.id ? correctedMovement as Movimiento : movement),
+        cuentas: state.cuentas.map((account) => account.id === card.id && adjustsBalance
+          ? { ...account, saldo_actual: correctedBalance }
+          : account),
+      }));
+      pagosConciliados += 1;
+    }
+
     // A completed loan payment replaces the matching planned expense. The
     // imported row is retained as an audit reference but becomes balance-neutral.
     const importedLoanPayments = get().movimientos.filter((movement) =>
@@ -1180,6 +1287,127 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
           : movement.id === actual.id ? updatedActual as Movimiento
             : movement
       ) }));
+      pagosConciliados += 1;
+    }
+
+    // Match confirmed recurring services against the actual bank debit. WOM may
+    // be prepaid at month end, so allow the debit up to seven days before the
+    // planned date. OpenCode can vary with the COP/USD exchange rate, or the
+    // plan may be recorded in USD while the bank debit is in COP.
+    const importedServicePayments = get().movimientos.filter((movement) => {
+      const description = normalize(movement.descripcion);
+      return movement.estado === 'completado' && movement.tipo === 'gasto'
+        && Boolean(importMarker(movement.notas))
+        && !movement.notas?.includes('[conciliado-a-plan:')
+        && !movement.notas?.includes('[pago-vinculado-plan:')
+        && (description.includes('opencode') || description.includes('partners telecom'));
+    });
+    for (const actual of importedServicePayments) {
+      const actualDescription = normalize(actual.descripcion);
+      const isOpenCode = actualDescription.includes('opencode');
+      const actualDay = new Date(`${actual.fecha}T00:00:00`).getTime();
+      const plans = get().movimientos.filter((movement) => {
+        const planDescription = normalize(movement.descripcion);
+        if (movement.estado !== 'pendiente' || movement.tipo !== 'gasto') return false;
+        if (isOpenCode) {
+          if (!planDescription.includes('opencode') || movement.fecha.slice(0, 7) !== actual.fecha.slice(0, 7)) return false;
+          if (movement.moneda !== actual.moneda) return true;
+          return Math.abs(movement.monto - actual.monto) <= Math.max(1, movement.monto * 0.2);
+        }
+        const plannedDay = new Date(`${movement.fecha}T00:00:00`).getTime();
+        return (planDescription.includes('wom') || /plan movil/.test(planDescription))
+          && movement.cuenta_id === actual.cuenta_id
+          && movement.moneda === actual.moneda
+          && Math.abs(movement.monto - actual.monto) <= 1
+          && Math.abs(plannedDay - actualDay) <= 7 * 86400000;
+      });
+      if (plans.length !== 1) continue;
+
+      const plan = plans[0];
+      const sameCurrency = plan.moneda === actual.moneda;
+      const previousPlan = {
+        monto: plan.monto,
+        fecha: plan.fecha,
+        descripcion: plan.descripcion,
+        categoria_id: plan.categoria_id,
+        notas: plan.notas,
+        estado: plan.estado,
+      };
+      const planNotes = [plan.notas, reconciliationNote(actual.id)].filter(Boolean).join(' ');
+      const planUpdate = sameCurrency
+        ? {
+            monto: actual.monto,
+            fecha: actual.fecha,
+            descripcion: `${isOpenCode ? 'OpenCode' : 'Plan WOM'} · ${actual.descripcion}`,
+            categoria_id: actual.categoria_id || plan.categoria_id,
+            notas: planNotes,
+            estado: 'completado' as const,
+          }
+        : {
+            // Keep the planned USD amount/currency; the imported COP debit
+            // remains the source of truth for the bank balance.
+            notas: planNotes,
+            estado: 'completado' as const,
+          };
+      const { data: updatedPlan, error: planError } = await supabase.from('movimientos')
+        .update(planUpdate)
+        .eq('id', plan.id)
+        .eq('user_id', session.user.id)
+        .eq('estado', 'pendiente')
+        .select('*')
+        .maybeSingle();
+      if (planError || !updatedPlan) throw new Error('No se pudo marcar como pagado el compromiso que coincide con el extracto.');
+
+      if (sameCurrency) {
+        const actualNotes = [withoutTransferFlow(actual.notas), reconciledImportMarker(plan.id)].filter(Boolean).join(' ');
+        const { data: updatedActual, error: actualError } = await supabase.from('movimientos')
+          .update({ tipo: 'transferencia', categoria_id: null, notas: actualNotes })
+          .eq('id', actual.id)
+          .eq('user_id', session.user.id)
+          .eq('tipo', 'gasto')
+          .select('*')
+          .maybeSingle();
+        if (actualError || !updatedActual) {
+          const { error: rollbackError } = await supabase.from('movimientos')
+            .update(previousPlan)
+            .eq('id', plan.id)
+            .eq('user_id', session.user.id)
+            .eq('estado', 'completado');
+          if (rollbackError) set({ syncError: 'La conciliación del pago quedó incompleta. Recarga los movimientos y revisa el compromiso.' });
+          throw new Error(rollbackError
+            ? 'No se pudo completar ni revertir la conciliación del pago. Recarga los movimientos.'
+            : 'No se pudo vincular el débito importado; se revirtió el compromiso.');
+        }
+        set((state) => ({ movimientos: state.movimientos.map((movement) =>
+          movement.id === plan.id ? updatedPlan as Movimiento
+            : movement.id === actual.id ? updatedActual as Movimiento
+              : movement
+        ) }));
+      } else {
+        const actualNotes = [actual.notas, linkedPaidPlanMarker(plan.id)].filter(Boolean).join(' ');
+        const { data: updatedActual, error: actualError } = await supabase.from('movimientos')
+          .update({ notas: actualNotes })
+          .eq('id', actual.id)
+          .eq('user_id', session.user.id)
+          .select('*')
+          .maybeSingle();
+        if (actualError || !updatedActual) {
+          const { error: rollbackError } = await supabase.from('movimientos')
+            .update(previousPlan)
+            .eq('id', plan.id)
+            .eq('user_id', session.user.id)
+            .eq('estado', 'completado');
+          if (rollbackError) set({ syncError: 'La conciliación de OpenCode quedó incompleta. Recarga los movimientos y revisa el compromiso.' });
+          throw new Error(rollbackError
+            ? 'No se pudo completar ni revertir el vínculo de OpenCode. Recarga los movimientos.'
+            : 'No se pudo vincular el débito de OpenCode; se revirtió el compromiso.');
+        }
+        set((state) => ({ movimientos: state.movimientos.map((movement) =>
+          movement.id === plan.id ? updatedPlan as Movimiento
+            : movement.id === actual.id ? updatedActual as Movimiento
+              : movement
+        ) }));
+      }
       pagosConciliados += 1;
     }
 

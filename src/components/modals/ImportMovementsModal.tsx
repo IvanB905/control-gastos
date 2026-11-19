@@ -152,7 +152,14 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
       });
 
       const existingMarkers = new Set(movimientos.map((movement) => importMarker(movement.notas)).filter(Boolean));
-      const cardPayments = rows.filter((row) => row.tipo === 'transferencia' && /PAGO .*TC MASTER/i.test(row.descripcion));
+      const cardPayments = rows.filter((row) => {
+        if (row.tipo !== 'transferencia' || /mastercard/i.test(row.sourceAccount)) return false;
+        const description = row.descripcion.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-CO');
+        // Only create the second leg when both sides share a currency. A COP
+        // debit labelled DOLAR is an FX payment; do not credit the COP card.
+        return (/pago .*tc master/.test(description) && description.includes('master pesos') && row.moneda === 'COP')
+          || (description.includes('master dolar') && row.moneda === 'USD');
+      });
       cardPayments.forEach((row) => {
         const marker = `transfer-${row.fingerprint}`;
         if (existingMarkers.has(marker)) return;
@@ -275,8 +282,13 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
                 <span><strong className="text-zinc-800 dark:text-zinc-200">Actualizar saldos automáticamente.</strong> Solo aplica movimientos completados posteriores a la fecha de referencia de cada cuenta; los anteriores no se vuelven a sumar.</span>
               </label>
               <p className="text-[11px] leading-5 text-zinc-500">
-                Los pagos a tarjeta se guardan como transferencias vinculadas entre ambas cuentas, así no se duplican como gasto. Las transferencias a Nequi y los retiros se conservan como transferencias de salida.
+                Los pagos a tarjeta se vinculan entre cuentas cuando ambas usan la misma moneda. Las transferencias a Nequi y los retiros se conservan como transferencias de salida.
               </p>
+              {rows.some((row) => row.tipo === 'transferencia' && row.moneda === 'COP' && /master\s*dolar/i.test(row.descripcion)) && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                  Detecté un pago a la tarjeta en dólares debitado en COP. Se registrará como salida de la cuenta en COP y no abonará automáticamente la tarjeta USD, porque el archivo no informa el valor exacto en dólares ni la tasa aplicada.
+                </p>
+              )}
             </>
           )}
 
