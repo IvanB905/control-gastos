@@ -286,7 +286,7 @@ export const ImportMovementsModal: React.FC<ImportMovementsModalProps> = ({ isOp
               </p>
               {rows.some((row) => row.tipo === 'transferencia' && row.moneda === 'COP' && /master\s*dolar/i.test(row.descripcion)) && (
                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                  Detecté un pago a la tarjeta en dólares debitado en COP. Se registrará como salida de la cuenta en COP y no abonará automáticamente la tarjeta USD, porque el archivo no informa el valor exacto en dólares ni la tasa aplicada.
+                  Detecté un pago a la tarjeta en dólares debitado en COP. Se registrará como salida de la cuenta en COP y cerrará el recordatorio del mes, pero no cambiará el saldo de la tarjeta USD: el archivo no informa el valor exacto en dólares ni la tasa aplicada. Confirma esa deuda con el extracto.
                 </p>
               )}
             </>

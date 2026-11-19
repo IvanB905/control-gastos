@@ -83,7 +83,7 @@ export const AccountsView: React.FC = () => {
     try {
       const result = await reconciliarPagosImportados();
       setMergeMessage(result.pagosConciliados
-        ? `Conciliados ${result.pagosConciliados} pagos importados.${result.abonoTarjeta ? ` Abono aplicado a Mastercard: ${formatCurrency(result.abonoTarjeta, 'COP')}.` : ''} Los pagos del crédito se registran una sola vez; actualiza su saldo cuando tengas el capital e intereses del extracto.`
+        ? `Conciliados ${result.pagosConciliados} pagos importados.${result.abonoTarjeta ? ` Abono aplicado a Mastercard: ${formatCurrency(result.abonoTarjeta, 'COP')}.` : ''}${result.tarjetasPorConfirmar ? ` Corregí ${result.tarjetasPorConfirmar} abono(s) en COP asignado(s) por error a Mastercard pesos; confirma su saldo con el extracto en “Actualizar saldo”.` : ''} Los pagos del crédito se registran una sola vez; actualiza su saldo cuando tengas el capital e intereses del extracto.`
         : 'No encontré movimientos importados que coincidan con compromisos pendientes. No se modificaron pagos.');
     } catch (error) {
       setMergeMessage(error instanceof Error ? error.message : 'No se pudieron conciliar los pagos importados.');

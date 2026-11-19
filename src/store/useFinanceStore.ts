@@ -136,7 +136,7 @@ interface FinanceState {
   marcarRecordatorioTarjetaUSD: (id: string) => Promise<void>;
   registrarMovimientoNotificacion: (movimiento: Omit<Movimiento, 'id' | 'created_at'>, notificationId: string, transfer?: { flow: 'entrada' | 'salida'; counterpartId?: string }) => Promise<void>;
   importarMovimientos: (movimientos: Omit<Movimiento, 'id' | 'created_at'>[], opciones?: { actualizarSaldos?: boolean }) => Promise<void>;
-  reconciliarPagosImportados: () => Promise<{ pagosConciliados: number; abonoTarjeta: number }>;
+  reconciliarPagosImportados: () => Promise<{ pagosConciliados: number; abonoTarjeta: number; tarjetasPorConfirmar: number }>;
   reconciliarSaldosImportados: () => Promise<{ movimientosAplicados: number; cuentasActualizadas: number }>;
   editarMovimiento: (id: string, updated: Partial<Movimiento>) => Promise<void>;
   eliminarMovimiento: (id: string) => Promise<void>;
@@ -1106,6 +1106,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-CO');
     let pagosConciliados = 0;
     let abonoTarjeta = 0;
+    let tarjetasPorConfirmar = 0;
 
     // A COP debit labelled for the USD Mastercard confirms that the due-date
     // reminder was attended, but it does not reveal the USD amount or FX rate.
@@ -1146,6 +1147,9 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
     // card just because the bank debit itself was in COP. That creates a false
     // credit against the pesos card. Neutralize only the generated counterpart
     // with its exact import fingerprint; leave the real COP bank debit intact.
+    // The current card snapshot may have been edited after import, so require
+    // the user to confirm its balance from the card statement instead of
+    // guessing whether the false credit is already reflected there.
     const importedDollarCardPayments = get().movimientos.filter((movement) =>
       movement.estado === 'completado' && movement.tipo === 'transferencia'
       && movement.moneda === 'COP'
@@ -1171,21 +1175,6 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       const incorrectPair = pairs[0];
       const card = get().cuentas.find((account) => account.id === incorrectPair.cuenta_id);
       if (!card) continue;
-      const adjustsBalance = !card.saldo_fecha || actual.fecha > card.saldo_fecha;
-      const oldBalance = Number(card.saldo_actual);
-      const correctedBalance = oldBalance - (adjustsBalance ? incorrectPair.monto : 0);
-      if (adjustsBalance) {
-        const { data, error } = await supabase.from('cuentas')
-          .update({ saldo_actual: correctedBalance })
-          .eq('id', card.id)
-          .eq('user_id', session.user.id)
-          .eq('saldo_actual', oldBalance)
-          .select('id');
-        if (error || !data?.some((row) => row.id === card.id)) {
-          throw new Error('No pude corregir con seguridad el abono USD asignado por error a la tarjeta en pesos. Actualiza los saldos y vuelve a intentar.');
-        }
-      }
-
       const correctedNotes = [withoutTransferFlow(incorrectPair.notas), reconciledImportMarker(actual.id), '[abono-usd-no-convertido]'].filter(Boolean).join(' ');
       const { data: correctedMovement, error: pairError } = await supabase.from('movimientos')
         .update({ notas: correctedNotes })
@@ -1194,23 +1183,13 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
         .select('*')
         .maybeSingle();
       if (pairError || !correctedMovement) {
-        if (adjustsBalance) {
-          const { error: rollbackError } = await supabase.from('cuentas')
-            .update({ saldo_actual: oldBalance })
-            .eq('id', card.id)
-            .eq('user_id', session.user.id)
-            .eq('saldo_actual', correctedBalance);
-          if (rollbackError) set({ syncError: 'La corrección del pago en dólares quedó incompleta. Recarga y revisa el saldo de Mastercard en pesos.' });
-        }
         throw new Error('No se pudo corregir la contraparte de tarjeta en pesos.');
       }
       set((state) => ({
         movimientos: state.movimientos.map((movement) => movement.id === incorrectPair.id ? correctedMovement as Movimiento : movement),
-        cuentas: state.cuentas.map((account) => account.id === card.id && adjustsBalance
-          ? { ...account, saldo_actual: correctedBalance }
-          : account),
       }));
       pagosConciliados += 1;
+      tarjetasPorConfirmar += 1;
     }
 
     // A completed loan payment replaces the matching planned expense. The
@@ -1535,7 +1514,7 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       get().calcularResumenes();
       persistLocally(get());
     }
-    return { pagosConciliados, abonoTarjeta };
+    return { pagosConciliados, abonoTarjeta, tarjetasPorConfirmar };
   },
 
   editarMovimiento: async (id, updated) => {
